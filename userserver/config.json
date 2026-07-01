@@ -1,6 +1,6 @@
 {
   "protocol": "http",
-  "address": "redis://red-d92ihhe7r5hc73fm9s0g",
+  "address": "red-d92ihhe7r5hc73fm9s0g",
   "port": 6379,
   "user_password": "thisisatest",
   "https_cert": "",
