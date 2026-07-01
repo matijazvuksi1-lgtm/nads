@@ -1,7 +1,7 @@
 {
   "protocol": "http",
-  "address": "127.0.0.1",
-  "port": 1340,
+  "address": "redis://red-d92ihhe7r5hc73fm9s0g",
+  "port": 6379,
   "user_password": "thisisatest",
   "https_cert": "",
   "https_key": "",
