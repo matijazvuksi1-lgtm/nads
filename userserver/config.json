@@ -1,7 +1,7 @@
 {
   "protocol": "http",
-  "address": "red-d92ihhe7r5hc73fm9s0g",
-  "port": 6379,
+  "address": "127.0.0.1",
+  "port": 1342,
   "user_password": "thisisatest",
   "https_cert": "",
   "https_key": "",
@@ -12,7 +12,7 @@
   "metrics_enabled": false,
   "use_one_port": true,
   "redis_port": 6379,
-  "redis_host": "127.0.0.1",
+  "redis_host": "red-d92ihhe7r5hc73fm9s0g",
   "redis_password": "",
   "memcached_host": "127.0.0.1",
   "memcached_port": 11212,
