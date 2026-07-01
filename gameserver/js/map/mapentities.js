@@ -1,0 +1,935 @@
+
+var Chest = require('../entity/chest');
+var NpcStatic = require('../entity/npcstatic');
+var NpcMove = require('../entity/npcmove');
+var Messages = require('../message');
+var MobAI = require("../mobai");
+
+var MapEntities = cls.Class.extend({
+
+
+    init: function (id, server, map) {
+    	this.id = id;
+    	this.map = map;
+    	this.server = server;
+      this.world = server;
+//    	this.database = database;
+
+      this.entities = {};
+      this.players = {};
+      this.characters = {};
+      this.npcplayers = {};
+      this.mobs = {};
+//      this.attackers = {};
+      this.items = {};
+      this.equipping = {};
+      this.hurt = {};
+      this.npcs = {};
+//      this.pets = {};
+      this.chests = {};
+      this.blocks = {};
+
+      this.packets = {};
+
+      this.mobAreas = [];
+//      this.chestAreas = [];
+      this.groups = {};
+
+  		this.pathfinder = null;
+  		this.pathingGrid = null;
+
+  		this.zoneGroupsReady = false;
+
+  		this.maxPackets = 10;
+
+  		this.entityCount = 0;
+
+      this.mobAI = null;
+
+      this.cellsize = G_TILESIZE;
+
+      this.harvest = {};
+
+      this.initSpatialEntities(G_SPATIAL_SIZE);
+    },
+
+    initSpatialEntities: function (size) {
+      this.spatial = [];
+      this.spatialSize = size;
+      var spatialWidth = Math.ceil(this.map.width / size);
+      var spatialHeight = Math.ceil(this.map.height / size);
+      for(var i=0, j=0; i < spatialHeight; i++) {
+        this.spatial[i] = [];
+        for(j=0; j < spatialWidth; j++) {
+          this.spatial[i][j] = [];
+        }
+      }
+    },
+
+    getSpatialEntities: function (arr)
+    {
+        var x1 = ~~(Math.max(arr[0],0) / this.spatialSize);
+        var y1 = ~~(Math.max(arr[1],0) / this.spatialSize);
+        var x2 = ~~(Math.min(arr[2],this.map.width-1) / this.spatialSize);
+        var y2 = ~~(Math.min(arr[3],this.map.height-1) / this.spatialSize);
+
+        //console.info("getSpatialEntities - x1:"+x1+",y1:"+y1+",x2:"+x2+",y2:"+y2);
+        var res = [];
+        var l1 = this.spatial.length;
+        var l2 = 0;
+        for(var j = y1, i=0; j <= y2; ++j)
+        {
+          l2 = this.spatial[j].length;
+          for(i = x1; i <= x2; ++i) {
+            /*if (j < 0 || j >= l1)
+              continue;
+            if (i < 0 || i >= l2)
+              continue;*/
+            for (var entity of this.spatial[j][i]) {
+              if (!entity) continue;
+              //console.info("id:"+id);
+              //console.info("entity.id:"+entity.id);
+              res.push(entity);
+            }
+          }
+        }
+        return res;
+    },
+
+    mapready: function() {
+      this.initPathFinder();
+      this.initPathingGrid();
+    	//this.initZoneGroups();
+
+      this.mobAI = new MobAI(this.server, this.map);
+    },
+
+    initPathFinder: function() {
+    	this.pathfinder = new Pathfinder(this.map.width, this.map.height);
+    },
+
+    spawnNpcs: function(count) {
+    	var npc;
+    	//console.info("SPAWN NPCS");
+    	//if (this.map === this.server.maps[0]) // World Map
+    	//{
+			for(var i = 0; i < count; ++i)
+			{
+				npc = this._createNpc("Npc"+i);
+			}
+		  //}
+    },
+
+    _createNpc: function(name) {
+	    var self = this;
+
+      pos = this.spaceEntityRandomApart(2, function () { return self.map.getRandomPosition(); });
+
+	    var npc = new NpcMove(++this.entityCount, 0, pos.x * 16, pos.y * 16, self.map);
+
+		  self.addNpcMove(npc);
+		  //self.sendBroadcast(npc.spawn());
+		  return npc;
+    },
+
+    initPathingGrid: function() {
+  		var map = this.map,
+  		    self = this;
+  			console.info("pathinggrid height:"+map.height+", width:"+map.width);
+
+  		var grid = new Uint8Array(map.height);
+  		for(var i=0, j=0; i < map.height; ++i) {
+  			grid[i] = new Uint8Array(map.width);
+  			for(j=0; j < map.width; ++j) {
+          if (map.grid[i][j])
+            grid[i][j] = 1;
+          else
+            grid[i][j] = 0;
+  			}
+  		}
+  		self.entitygrid = grid.slice(0);
+      //self.pathingGrid = grid.slice(0);
+
+  		console.info("Initialized the pathing grid with static colliding cells.");
+    },
+
+    /*pushSpawnsToPlayer: function(player, ids) {
+        this.processWho(this.player);
+    },*/
+
+    processWho: function(player, dist) {
+        dist = dist || 64;
+        var self = this;
+        //console.info("processWho - called.");
+        var screens = [];
+        //var ids = [];
+        //var knowns = [];
+
+        var ids = player.knownIds;
+        ids = ids.parseInt();
+        //console.info("knownIds: "+JSON.stringify(ids));
+
+        var pgx = ~~(player.x/G_TILESIZE);
+        var pgy = ~~(player.y/G_TILESIZE);
+
+        //console.info("x1:"+x1+",y1:"+y1+",x2:"+x2+",y2:"+y2);
+        var entities = this.getSpatialEntities([pgx - dist, pgy - dist,pgx + dist, pgy + dist]);
+
+        //console.info("self.entities.length: "+Object.keys(self.entities).length);
+        for (var entity of entities) {
+          if (entity && !(entity === player) && self.isOffset(player, entity))
+            screens.push(entity.id);
+        }
+        //console.info("screens:"+JSON.stringify(screens));
+        //console.info("ids:"+JSON.stringify(ids));
+
+        var screenIds = (ids && ids.length > 0) ? _.difference(screens, ids) : screens;
+
+        //console.info(JSON.stringify(screenIds));
+
+        _.each(screenIds, function(id) {
+            var entity = self.getEntityById(id);
+            if(entity && !(entity === player))
+            {
+                player.knownIds.push(entity.id);
+                self.sendToPlayer(player, entity.spawn());
+                if (entity.path) {
+                  var msg = new Messages.MovePath(entity, entity.path);
+                  self.sendToPlayer(player, msg);
+                }
+            }
+        });
+    },
+
+    isOffset: function(entity, entity2, extra, cameraHalfX, cameraHalfY) {
+        extra = (extra || 0) * G_TILESIZE;
+        cameraHalfX = (cameraHalfX || 32) * G_TILESIZE;
+        cameraHalfY = (cameraHalfY || 18) * G_TILESIZE;
+        var minX = Math.max(0,entity.x-cameraHalfX-extra);
+        var minY = Math.max(0,entity.y-cameraHalfX-extra);
+        var maxX = Math.min(this.map.width * G_TILESIZE, entity.x+cameraHalfX+extra);
+        var maxY = Math.min(this.map.height * G_TILESIZE, entity.y+cameraHalfX+extra);
+
+        //console.info("entity.x: "+entity.x+" entity.y:"+entity.y);
+        //console.info("entity2.x: "+entity2.x+" entity2.y:"+entity2.y);
+        //console.info("minX:"+minX+",maxX:"+maxX+",minY:"+minY+",maxY:"+maxY);
+        return (entity2.y >= minY && entity2.y <= maxY && entity2.x >= minX && entity2.x <= maxX);
+    },
+
+    processPackets: function() {
+        var self = this;
+
+        if (self.packets.length > 0)
+        	console.info(JSON.stringify(self.packets));
+
+        Utils.forEach(this.packets, (packet, id) => {
+          len = packet.length;
+          if (len > 0 && typeof packet !== 'undefined' && packet !== null)
+          {
+             var player = self.getEntityById(id);
+              var conn = self.server.socket.getConnection(id);
+              if (player && player.map && player.mapStatus >= 2 && conn !== null && typeof conn !== 'undefined')
+              {
+                  var packets = [];
+                  for (var i =0; i < self.maxPackets; ++i)
+                  {
+                      if (packet.length === 0)
+                        break;
+                      packets.push(packet.shift());
+                  }
+                  conn.send(packets);
+              } else {
+                  conn = null;
+                  //delete conn;
+              }
+          }
+        });
+    },
+
+    sendToPlayer: function(player, message) {
+        if (!message)
+        	return;
+
+        var self = this;
+        //console.info("sent_raw: "+message;
+        if (player && player.id in self.packets)
+        {
+				    self.packets[player.id].push(message.serialize());
+        }
+        this.processPackets();
+    },
+
+    sendBroadcast: function(message, ignoredPlayer)  {
+        if (!message)
+        	return;
+
+        Utils.forEach(this.packets, function (packet, id) {
+          if (id !== ignoredPlayer)
+          {
+              packet.push(message.serialize());
+          }
+        });
+        this.processPackets();
+    },
+
+    sendNeighbours: function(entity, message, ignoredPlayer, areaLength)  {
+    	//console.info("sendNeighbours");
+    	var self = this;
+    	//console.info(JSON.stringify(message.serialize()));
+      areaLength = areaLength || 64;
+    	var players = self.getPlayerAround(entity, areaLength);
+      players.push(entity);
+
+    	//console.info(entities.length);
+      for (var player of players) {
+          if (self.packets.hasOwnProperty(player.id) && !ignoredPlayer || (ignoredPlayer && player !== ignoredPlayer))
+          {
+               //console.info("neighbour.id:"+neighbour.id);
+               self.packets[player.id].push(message.serialize());
+          }
+      }
+      this.processPackets();
+    },
+
+    isMobsOnSameTile: function(mob) {
+      var p1 = mob.getLastPosition();
+  		_.each(self.mobs, function(entity) {
+        var p2 = entity.getLastPosition();
+  			if(entity.id !== mob.id && p1[0] === p2[0] && p1[1] === p2[1])
+  			{
+          result = true;
+  			}
+  		});
+  		//console.info("result="+result);
+  		return result;
+    },
+
+    getFreeAdjacentNonDiagonalPosition: function(entity) {
+  		var self = this,
+  			result = null;
+
+  		entity.forEachAdjacentNonDiagonalPosition(function(x, y, orientation) {
+  			if(!result && !self.map.isColliding(x, y) && !self.isCharacterAt(x, y)) {
+  			   result = {x: x, y: y, o: orientation};
+  			}
+  		});
+  		return result;
+    },
+
+    getFreeFutureAdjacentNonDiagonalPosition: function(entity) {
+  		var self = this,
+  			result = [];
+
+  		entity.forEachFutureAdjacentNonDiagonalPosition(function(x, y, orientation) {
+
+        if(!self.map.isColliding(x, y) && !self.isMobAt(x, y)) {
+  			     result.push({x: x, y: y, o: orientation});
+  			}
+  		});
+  		return result;
+    },
+
+/*
+  	getRandomPosition: function (entity, threshold) {
+  		var pos = [];
+  		var valid = false;
+  		//console.info("entity.x:"+entity.x+",entity.y:"+entity.y);
+  		var tries = 10;
+  		var attempts = 0;
+      threshold *= G_TILESIZE;
+  		while (attempts++ < tries && (pos.y !== entity.y && pos.x !== entity.x)) {
+  			//console.info("try move attempt:"+attempts);
+  			var r1 = Utils.randomRangeInt(-threshold,threshold);
+  			var r2 = Utils.randomRangeInt(-threshold,threshold);
+  			//console.info("r1="+r1+",r2="+r2);
+  			pos[0] = entity.x + r1;
+  			pos[1] = entity.y + r2;
+        //console.info("pos: "+pos[0]+","+pos[1]);
+  			valid = !this.map.isColliding(pos[0], pos[1]);
+        //console.info("valid="+valid);
+
+  			if (valid && !(pos[0]==-1 && pos[1]==-1))
+  				return {x: pos[0], y: pos[1]};
+  		}
+  		//console.info("pos.x:"+pos.x+",pos.y:"+pos.y);
+      console.info("getRandomPosition - failed");
+  		return null;
+  	},
+*/
+    /*handleOpenedChest: function(chest, player) {
+      var self = this;
+      self.pushToAdjacentGroups(chest.group, chest.despawn());
+      self.removeEntity(chest);
+
+	    var item = self.server.getDroppedOrStolenItem(player, chest, false);
+	    if (item && item instanceof Item)
+	    {
+    		item.x = chest.x;
+    		item.y = chest.y;
+    		self.sendBroadcast(new Messages.Spawn(item));
+    		self.server.handleItemDespawn(item);
+	    }
+	    chest.handleRespawn();
+    },*/
+
+    spawnEntities: function(map) {
+        var self = this;
+
+        //setTimeout(function () {
+        _.each(self.map.spawnEntities, function(npcData) {
+            if (npcData.type == Types.EntityTypes.NPCMOVE) {
+              var npc = self.addNpcMove(npcData.id, npcData.x, npcData.y);
+              if (npcData.name)
+                npc.name = npcData.name;
+              if (npcData.scriptQuests)
+                npc.scriptQuests = npcData.scriptQuests;
+            }
+            if (npcData.type == Types.EntityTypes.NPCSTATIC) {
+              var npc = self.addNpcStatic(npcData.id, npcData.x, npcData.y);
+              if (npcData.name)
+                npc.name = npcData.name;
+              if (npcData.scriptQuests)
+                npc.scriptQuests = npcData.scriptQuests;
+            }
+
+        });
+        //},10000);
+
+        console.info(JSON.stringify(self.map.staticEntities));
+        _.each(self.map.staticEntities, function(kind, tid) {
+
+            var pos = map.tileIndexToGridPosition(tid);
+
+            console.info("kind:"+kind);
+            if (NpcData.isNpc(kind)) {
+              console.info("npc:" + kind + ",x:"+pos.x+",y:"+pos.y);
+              self.addNpcStatic(kind, pos.x, pos.y);
+            }
+        });
+    },
+
+    /*spawnEntity: function(kind, x, y, map) {
+        var self = this;
+        var entity;
+        //console.info("kind="+kind);
+        if (NpcData.isNpc(kind)) {
+            entity = self.addNpc(kind, x, y, map);
+        }
+        else if (MobData.isMob(kind)) {
+            entity = self.addMob(kind, x, y);
+        }
+        return entity;
+    },*/
+
+    addEntity: function(entity) {
+      this.entities[entity.id] = entity;
+      if (entity instanceof Character)
+        this.characters[entity.id] = entity;
+    },
+
+    addPlayer: function(player) {
+      console.info("addPlayer - player id: "+player.id);
+      this.addEntity(player);
+      this.players[player.id] = player;
+      this.packets[player.id] = [];
+    },
+
+    addChest: function(chest) {
+        this.addEntity(chest);
+        this.chests[chest.id] = chest;
+    },
+
+    addBlock: function (block) {
+      this.addEntity(block);
+      this.blocks[block.id] = block;
+      return block;
+    },
+
+    addMob: function(kind, x, y, area) {
+      var mob = new Mob(++this.entityCount, kind, x, y, this.map, area);
+      mob.mobAI = this.mobAI;
+
+      this.addEntity(mob);
+      this.mobs[mob.id] = mob;
+
+      this.world.mobCallback.setCallbacks(mob);
+
+      return mob;
+    },
+
+    addNpcStatic: function(kind, x, y) {
+        var npc = new NpcStatic(++this.entityCount, kind, x, y, this.map);
+
+        this.addEntity(npc);
+        this.npcs[npc.id] = npc;
+
+        return npc;
+    },
+
+    addNpcMove: function(kind, x, y) {
+        var npc = new NpcMove(++this.entityCount, kind, x, y, this.map);
+
+        this.addEntity(npc);
+        this.npcplayers[npc.id] = npc;
+
+        return npc;
+    },
+
+    addItem: function(item) {
+        var self = this;
+
+        self.addEntity(item);
+        self.items[item.id] = item;
+
+        return item;
+    },
+
+    removeSpatial: function (entity) {
+      if (entity.spatialMap) {
+        var spatial = this.spatial[entity.spy][entity.spx];
+        Utils.removeFromArray(spatial, entity);
+      }
+    },
+
+    removeEntity: function(entity) {
+    	  console.error("removeEntity: "+entity.id);
+        this.removeSpatial(entity);
+
+        if (entity.id in this.mobs)
+            delete this.mobs[entity.id];
+
+        if (entity.id in this.items)
+            delete this.items[entity.id];
+
+        if (entity.id in this.players)
+            delete this.players[entity.id];
+
+        if (entity.id in this.chests)
+            delete this.chests[entity.id];
+
+        if (entity.id in this.blocks)
+            delete this.blocks[entity.id];
+
+        if (entity.id in this.characters)
+            delete this.characters[entity.id];
+
+        if (entity.id in this.entities)
+            delete this.entities[entity.id];
+
+        entity.destroy();
+    },
+
+    removePlayer: function(player) {
+      //try { throw new Error(); } catch (e) { console.error(e.stack); }
+
+      console.info("removePlayer-called");
+    	var self = this;
+
+	    if (player instanceof Player)
+		     this.sendBroadcast(player.despawn());
+
+      console.info("deleting player traces..");
+
+      self.removeEntity(player);
+
+      delete self.packets[player.id];
+      //delete player;
+      player = null;
+    },
+
+    removeNpcPlayer: function(player) {
+      console.info("removePlayer-called");
+
+      this.sendBroadcast(player.despawn(0));
+      this.removeEntity(player);
+
+      delete this.npcplayers[player.id];
+    },
+
+    createItem: function(itemRoom, x, y) {
+        var id = (++this.entityCount);
+        var item = null;
+
+        var type = Types.EntityTypes.ITEM;
+        if(!ItemTypes.isEquippable(itemRoom.itemKind))
+          type = Types.EntityTypes.ITEMLOOT;
+        item = new Item(type, id, itemRoom, x, y, this.map);
+        this.addItem(item);
+
+        return item;
+    },
+
+    /*createChest: function(x, y, items) {
+        var self = this;
+        var chest = self.createItem(37, x, y); // CHEST
+        chest.map = self.map;
+        return chest;
+    },*/
+
+    addStaticItem: function(map, item) {
+        var self = this;
+
+        item.isStatic = true;
+        item.onRespawn(self.addStaticItem.bind(self, item));
+
+        return self.addItem(item);
+    },
+
+    /*addItemFromChest: function(kind, x, y) {
+        var item = this.createItem(kind, x, y);
+        item.isFromChest = true;
+        return this.addItem(item);
+    },*/
+
+    /*getNpcByQuestId:function(id) {
+      var self = this;
+      var npc;
+      for (var id in self.npcs) {
+        npc = self.npcs[id];
+        // DANGER - if questhandler variable changes so should this.
+        if (npc.entityQuests.questEntityKind === id)
+          return npc;
+      }
+      return null;
+    },*/
+
+    getEntityById: function(id) {
+    	var self = this;
+      if (self.entities.hasOwnProperty(id))
+          return self.entities[id];
+    },
+
+    getPlayerByName: function(name)
+    {
+        for (var id in this.players) {
+          var p = this.players[id];
+          if (p.name === name)
+            return p;
+        }
+        return null;
+    },
+
+    setModifyGoldByName: function(name, mod) {
+      var player = this.getPlayerByName(name);
+      if (player)
+        player.modifyGold(mod);
+      //else
+        //this.database.modifyGold(name, mod);
+    },
+
+    getEntitiesByPosition: function(x,y) {
+    	entities = [];
+    	this.forEachEntity(function(e) {
+    		if (e.x === x && e.y === y)
+    		    entities.push(e);
+    	});
+    	return entities;
+    },
+
+    isCharacterAt: function (x,y) {
+      return this.entitygrid[y][x] === 1;
+    },
+
+    isMobAt: function(x,y) {
+    	var result = false;
+	    this.forEachMob(function (mob) {
+        var pos = mob.getLastPosition();
+    		if (x === pos[0] && y === pos[1])
+    		    result = true;
+  	  });
+  	  return result;
+    },
+
+    forEachEntity: function(callback) {
+        Utils.forEach(this.entities, function (entity) {
+          callback(entity);
+        });
+    },
+
+    forEachPlayer: function(callback) {
+        Utils.forEach(this.players, function (entity) {
+          callback(entity);
+        });
+    },
+
+    forEachMob: function(callback) {
+        Utils.forEach(this.mobs, function (entity) {
+          callback(entity);
+        });
+    },
+
+    forEachCharacter: function(callback) {
+        Utils.forEach(this.entities, function (entity) {
+          if (entity instanceof Character)
+            callback(entity);
+        });
+    },
+
+    forEachNpcPlayer: function(callback) {
+      Utils.forEach(this.npcplayers, function (entity) {
+        if (entity instanceof Character)
+          callback(entity);
+      });
+    },
+
+// TODO - Minimize function calls so you can pass type to loop through, and the additional condition.
+    getEntitySpatialCount: function(entity, range, conditional) {
+      return this.getEntityAroundSpatial(entity, range, conditional).length;
+    },
+
+    getEntityAroundSpatial: function(entity, range, conditional) {
+      range *= G_TILESIZE;
+      var r = range >> 1;
+      var x = entity.x;
+      var y = entity.y;
+      var entities = [];
+      var def_conditional = function (e1,e2) { return e1 !== e2; };
+      conditional = conditional || def_conditional;
+      //console.info("getEntityAround, range: "+range+",x:"+x+",y:"+y);
+      var e2;
+      var group = this.getSpatialEntities([x-r,y-r,x+r,y+r]);
+      for (var e2 of group) {
+          if (conditional(entity,e2))
+          {
+              //console.info("getEntityAround, pushed:"+e2.id);
+              entities.push(e2);
+          }
+      }
+      return entities;
+    },
+
+    getEntityCount: function(group, e1, range, conditional) {
+      return this.getEntityAround(group, e1, range, conditional).length;
+    },
+
+    getEntityAround: function(group, e1, range, conditional) {
+      range *= G_TILESIZE;
+      var entities = [];
+      conditional = conditional || function (e1, e2) { return e1 !== e2; };
+      var compare = function (e1, e2) {
+        return (Math.abs(e2.x-e1.x) <= range && Math.abs(e2.y-e1.y) <= range &&
+            conditional(e1,e2))
+      };
+      if (Array.isArray(group)) {
+        for (var e2 of group) {
+            if (compare(e1,e2))
+              entities.push(e2);
+        }
+      } else {
+        Utils.forEach(group, function (e2) {
+          if (compare(e1,e2))
+            entities.push(e2);
+        })
+      }
+      return entities;
+    },
+
+    getEachEntityAround: function(x, y, s) {
+        var x = ~~(x/G_TILESIZE);
+        var y = ~~(y/G_TILESIZE);
+        var entities = this.getSpatialEntities([x-s,y-s,x+s,y+s]);
+        return this.getEntityAround(entities, {x: x, y: y}, s);
+    },
+
+    getEntitiesAround: function(entity, range) {
+      var x = ~~(entity.x/G_TILESIZE);
+      var y = ~~(entity.y/G_TILESIZE);
+      var r = (range*G_TILESIZE) >> 1;
+      var entities = this.getSpatialEntities([x-r,y-r,x+r,y+r]);
+      return this.getEntityAround(entities, entity, r);
+    },
+
+    getCharactersAround: function(entity, range) {
+      return this.getEntityAround(this.getEntitiesAround(entity, range), entity, range,
+        function(e1,e2) { return (e1 !== e2 && e2 instanceof Character); });
+    },
+
+    getMobsAround: function(entity, range) {
+      return this.getEntityAround(this.mobs, entity, range);
+    },
+
+    getPlayerAround: function(entity, range) {
+      return this.getEntityAround(this.players, entity, range);
+    },
+
+    getAroundCount: function(entities, entity, range) {
+      return this.getEntityAround(entities, entity, range).length;
+    },
+
+    getEntityAroundCount: function(entity, range) {
+      var entities = this.getEntitiesAround(entity, range);
+      return this.getEntityAround(entities, entity, range).length;
+    },
+
+    getPlayerAroundCount: function(entity, range) {
+      return this.getEntityAround(this.players, entity, range).length;
+    },
+
+    getPartyAround: function(entity, range) { // entity
+      return this.getEntityAround(entity.party.players, entity, range);
+    },
+
+    itemDespawn: function (item)
+    {
+      this.sendNeighbours(item, new Messages.Despawn(item));
+      this.removeEntity(item);
+    },
+
+    handleEmptyChestArea: function(area) {
+        var self = this;
+        if(area) {
+            //var chest = self.addItem(self.createChest(area.chestX, area.chestY, area.items));
+            self.handleItemDespawn(chest);
+        }
+    },
+
+    tryAddingMobToChestArea: function(mob) {
+        var self = this;
+        _.each(self.chestAreas, function(area) {
+            if (area.contains(mob))
+                area.addToArea(mob);
+        });
+    },
+
+    findPath: function(character, x, y, ignoreList) {
+      var self = this,
+          path = [];
+
+      //console.info("PATHFINDER CODE");
+
+      if(this.pathfinder && character)
+      {
+          var grid = self.map.grid;
+          var path = null;
+          var pS =[character.x, character.y];
+          var ts = G_TILESIZE;
+
+          if (this.map.isColliding(character.x, character.y))
+          {
+            //console.warn("findPath - isColliding start.");
+            return null;
+          }
+
+          var pE = [x,y];
+          if (this.map.isColliding(x, y))
+          {
+            //console.warn("findPath - isColliding end.");
+            return null;
+          }
+
+          if (pS[0] === pE[0] && pS[1] === pE[1]) {
+            try { throw new Error(); } catch(err) { console.info(err.stack); }
+            //console.warn("findPath - path coordinates are the same.")
+            return null;
+          }
+
+          var shortGrid = this.pathfinder.getShortGrid(grid, pS, pE, 3);
+          var sgrid = shortGrid.crop;
+          var spS = shortGrid.substart;
+          var spE = shortGrid.subend;
+          var subpath = null;
+
+          console.info("findDirectPath - spS:"+JSON.stringify(spS));
+          console.info("findDirectPath - spE:"+JSON.stringify(spE));
+          subpath = this.pathfinder.findDirectPath(sgrid, spS, spE);
+
+          if (subpath)
+          {
+            subpath = this.pathfinder.makeNodesMidPoints(subpath);
+            subpath = this.pathfinder.dropUneededNodes(subpath);
+            console.info("findDirectPath - subpath:"+JSON.stringify(subpath));
+            if (!this.pathfinder.isValidGridPath(sgrid, subpath)) {
+              //console.error("subpath: "+JSON.stringify(subpath));
+              try { throw new Error(); } catch (e) { console.error(e.stack); }
+              return null;
+            }
+            var res = this.pathfinder.getFullFromShortPath(subpath, shortGrid.minX, shortGrid.minY);
+            console.info("findDirectPath - res:"+JSON.stringify(res));
+            if (!this.pathfinder.isValidGridPath(this.map.grid, res, true)) {
+              try { throw new Error(); } catch (e) { console.error(e.stack); }
+              return null;
+            }
+            return res;
+          }
+
+          if (!path) {
+            //console.warn("findPath - shortPath: attempting.");
+            //console.info("grid:"+JSON.stringify(grid));
+            //console.info(JSON.stringify(shortGrid));
+            subpath = this.pathfinder.findShortPath(sgrid,
+          	 shortGrid.minX, shortGrid.minY, spS, spE);
+            if (subpath)
+              path = this.pathfinder.getFullFromShortPath(subpath, shortGrid.minX, shortGrid.minY);
+            console.info("findPath - shortPath:"+JSON.stringify(path));
+          }
+
+          if (!path) {
+            console.warn("findPath - DANGER - findPath LONGGG");
+            var longGrid = this.pathfinder.getShortGrid(grid, pS, pE, 10);
+            var lpS = longGrid.substart;
+            var lpE = longGrid.subend;
+            path = this.pathfinder.findShortPath(longGrid.crop,
+          	 longGrid.minX, longGrid.minY, lpS, lpE);
+            if (path) {
+              path = this.pathfinder.dropUneededNodes(path);
+              path = this.pathfinder.getFullFromShortPath(path, longGrid.minX, longGrid.minY);
+            }
+            console.info("findPath - longPath:"+JSON.stringify(path));
+          }
+
+          if (!path) {
+              console.error("findPath - Error while finding the path to "+x+", "+y+" for "+character.id);
+              return null;
+          }
+          if (!this.pathfinder.isValidGridPath(this.map.grid, path, true)) {
+            try { throw new Error(); } catch (e) { console.error(e.stack); }
+            return null;
+          }
+          if (!(path[0][0] === character.x && path[0][1] === character.y)) {
+            try { throw new Error(); } catch (e) { console.error(e.stack); }
+            return null;
+          }
+          return path;
+        }
+        return null;
+    },
+
+    spaceEntityRandomApart: function (dist, callback_func, entities, entity, threshold) {
+      entities = entities || this.entities;
+      threshold = threshold || 100;
+    	var pos = null;
+    	var count = 1;
+      var param = (entity && entity.collision) ? entity.collision : null;
+      var iter = 0;
+
+			while (count > 0 && iter < threshold)
+			{
+				if (callback_func)
+				{
+				  pos = callback_func(param);
+				  count = pos ? this.getAroundCount(entities, pos, dist) : 0;
+				}
+        iter++;
+			}
+		  return pos;
+    },
+
+    isGridPositionEmpty: function (x, y) {
+      console.info("isGridPositionEmpty: x="+x+",y="+y);
+      if (this.map.isColliding(x, y))
+        return false;
+
+      var pos = {x: x, y: y};
+      var entities = this.getEntitiesAround(pos, 1);
+      if (entities.length === 0)
+        return true;
+      for (var entity of entities) {
+        if (entity.isOverPosition(pos))
+          return false;
+      }
+      return true;
+    },
+});
+
+
+module.exports = MapEntities;

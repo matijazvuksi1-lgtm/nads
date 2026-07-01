@@ -1,0 +1,13 @@
+TODO
+
+Shortcut assignments not working.
+
+When user clicks twice on equipment send equip packet.
+
+NEEDS TESTING - User Server is not releasing users when dropping the connection in select Player window.
+
+Have GameServer update the player counts to the UserServer.
+
+FIXED - swapping equipment items to different boxes deletes item.
+
+FIXED - When equipping/unequipping leather item, the sprite changes too.

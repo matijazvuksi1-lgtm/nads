@@ -1,0 +1,495 @@
+/* global Types */
+
+// TODO - Make Death Sprite seperate instead of changing Armor Sprite.
+var STATE_IDLE = 0,
+    STATE_MOVING = 1,
+    STATE_ATTACKING = 2;
+
+define(['./entity', './character', 'data/appearancedata'],
+  function(Entity, Character, AppearanceData) {
+  var Player = Character.extend({
+    init: function(id, type, map, kind, name) {
+
+      this._super(id, type, map, kind);
+      var self = this;
+
+      this.name = name;
+
+      this.rights = 0;
+
+      this.moveSpeed = 500;
+      this.setMoveRate(this.moveSpeed);
+
+      this.atkSpeed = 64;
+      this.setAttackRate(64);
+
+      //this.exp = {};
+      this.level = 0;
+      //this.levels = {};
+
+      this.stats = {
+        exp: {}
+      };
+
+
+      this.orientation = Types.Orientations.DOWN;
+      this.keyMove = false;
+
+      this.fsm = "IDLE";
+      this.sprites = [null, null];
+      this.pjsSprites = [null, null];
+      this.oldSprites = [null, null];
+    },
+
+    setItems: function () {
+      this.equipment = {};
+      this.inventory = {};
+      this.equipment.rooms = game.equipmentHandler.equipment;
+      this.inventory.rooms = game.inventory.inventory;
+    },
+
+    isMovingAll: function () {
+      return !this.freeze && (this.isMoving() || this.orientation !== Types.Orientations.NONE);
+      //return true;
+    },
+
+    setSkill: function(index, exp) {
+      this.skillHandler.add(index, exp);
+    },
+
+    setSkills: function(skillExps) {
+      this.skillHandler.addAll(skillExps);
+    },
+
+    getArmorSprite: function() {
+      return this.sprites[0];
+    },
+
+    getWeaponSprite: function() {
+      return this.sprites[1];
+    },
+
+    isArcher: function () {
+      var weapon = this.getWeapon();
+      if (weapon && ItemTypes.isArcherWeapon(weapon.itemKind)) {
+        return true;
+      }
+      return false;
+    },
+
+    getWeapon: function() {
+      if (!this.equipment)
+        return null;
+
+      return this.equipment.rooms[4];
+    },
+
+    hasWeapon: function() {
+      if (!this.equipment)
+        return false;
+
+      return this.equipment.rooms[4] !== null;
+    },
+
+    setRange: function() {
+      this.setAttackRange(1);
+      if (this.isArcher()) {
+        this.setAttackRange(10);
+      }
+    },
+
+    canKeyMove: function () {
+        var x=this.x, y=this.y;
+
+        switch (this.orientation)
+        {
+          case 1:
+            y--;
+            break;
+          case 2:
+            y++;
+            break;
+          case 3:
+            x--;
+            break;
+          case 4:
+            x++;
+            break;
+        }
+        var ov = game.isOverlapping(this, x, y);
+        if (ov)
+          log.info("isOverlapping.")
+        var ic = game.mapContainer.isColliding(x,y);
+        if (ic)
+          log.info("isColliding.")
+        return !(ov || ic);
+    },
+
+    move: function (time, orientation, state, x, y) {
+      var self = this;
+
+      this.setOrientation(orientation);
+      if (state === 1 && orientation !== Types.Orientations.NONE)
+      {
+        var lockStepTime = (G_LATENCY - (Utils.getWorldTime()-time));
+        lockStepTime = lockStepTime.clamp(G_UPDATE_INTERVAL,G_LATENCY);
+        console.warn("lockStepTime="+lockStepTime);
+
+        lockStepTime += G_LATENCY;
+        clearTimeout(this.moving_callback)
+        this.moving_callback = setTimeout(function () {
+          self.forceStop();
+          self.setPosition(x,y);
+          self.ex = -1;
+          self.ey = -1;
+          self.moving_callback = null;
+          self.walk(orientation);
+          self.freeze = false;
+          self.keyMove = true;
+        }, lockStepTime);
+      }
+      else if (state === 0 || orientation === Types.Orientations.NONE)
+      {
+        this.ex = x;
+        this.ey = y;
+        if (!this.movement.inProgress || this.moving_callback) {
+          this.forceStop();
+          this.setPosition(x,y);
+          clearTimeout(this.moving_callback);
+          this.moving_callback = null;
+        }
+      }
+      else if (state === 2 && orientation !== Types.Orientations.NONE)
+      {
+        this.forceStop();
+        this.setPosition(x,y);
+        this.ex = -1;
+        this.ey = -1;
+        clearTimeout(this.moving_callback);
+        this.moving_callback = null;
+      }
+    },
+
+    baseHit: function() {
+      return 0;
+    },
+
+    baseHitDef: function() {
+      return 0;
+    },
+
+    baseCrit: function() {
+      var itemDiff = this.level*2;
+      var item = this.equipment.rooms[4];
+      if (item) {
+        itemDiff = (3*ItemTypes.getData(item.itemKind).modifier)+(item.itemNumber*2);
+      }
+      var statDiff = this.stats.attack + (this.stats.luck*2);
+      var chance = Utils.clamp(0, 500, ~~(statDiff + itemDiff));
+      log.info("player - baseCrit: "+chance);
+      var chance_out = (chance / 5).toFixed(0)+"%";
+      return chance_out;
+      //return chance;
+    },
+
+    baseCritDef: function() {
+      var itemDiff = this.level*2;
+      for (var id in this.equipment.rooms) {
+        if (id === 4) continue;
+        var item = this.equipment.rooms[id];
+        if (item) {
+          itemDiff += (3*ItemTypes.getData(item.itemKind).modifier)+(item.itemNumber*2);
+        }
+      }
+      var statDiff = this.stats.defense + (this.stats.luck*2);
+      var chance = Utils.clamp(0, 500, ~~(statDiff + itemDiff));
+      log.info("player - baseCritDef: "+chance);
+      var chance_out = (chance / 5).toFixed(0)+"%";
+      return chance_out;
+      //return chance;
+    },
+
+    getWeaponLevel: function () {
+      var weapon = this.getWeapon();
+      if (!weapon)
+        return 0;
+      var weaponData = ItemTypes.KindData[weapon.itemKind];
+      return Types.getWeaponLevel(this.stats.exp[weaponData.type]);
+    },
+
+    hasHarvestWeapon: function (type) {
+      if (type && type === "any")
+          return true;
+
+      var weapon = this.getWeapon();
+      if (!weapon)
+        return false;
+
+      var weaponData = ItemTypes.KindData[weapon.itemKind];
+      if (type) {
+        return weaponData.type === type;
+      }
+      return ItemTypes.isHarvestWeapon(weapon.itemKind);
+    },
+
+    getWeaponType : function () {
+      //return "axe"; // todo remove.
+
+      var weapon = this.getWeapon();
+      if (!weapon)
+        return null;
+      var weaponData = ItemTypes.KindData[weapon.itemKind];
+      return weaponData.type;
+    },
+
+    baseDamage: function(defender) {
+      var dealt, dmg;
+      var weapon = this.getWeapon();
+      var level = this.level;
+
+      dealt = ~~(weapon ? (ItemTypes.getData(weapon.itemKind).modifier * 3 + weapon.itemNumber * 2) : level);
+
+      var lvl = Types.getAttackLevel(this.stats.exp.attack);
+      var power = ((lvl / 50) + 1);
+
+      power *= ((this.getWeaponLevel() / 50) + 1);
+
+      // Weapon Durability affects Damage.
+      if (weapon) {
+        dealt = ~~(dealt * ((weapon.itemDurability / weapon.itemDurabilityMax * 0.5) + 0.5));
+      }
+
+      // Players Stat affects Damage.
+      var mods = (this.stats.mod && this.stats.mod.attack ?
+        this.stats.mod.attack : 0);
+      dealt += ~~((this.stats.attack*3)+mods) + this.stats.luck;
+
+      var noobLvl = 12;
+      var noobMulti = 1 + Math.max(0,(noobLvl-this.level) * (1/this.level));
+
+      var min = ~~(level*power*noobMulti*4);
+      var max = ~~(min*1.15);
+
+      dmg = Utils.randomRangeInt(min, max) + dealt;
+
+      if (this.stats.mod && this.stats.mod.damage)
+        dmg += this.stats.mod.damage;
+
+      if (defender && defender instanceof Mob)
+      {
+        var type = this.getWeaponType();
+        if (type) {
+          var mod = defender.data.modDamage[type];
+          dmg = ~~(dmg * mod);
+        }
+      }
+
+      min = ~~(min + dealt);
+      max = ~~((max + dealt) * 3);
+
+      return [min,max];
+      //return dmg;
+    },
+
+    baseDamageDef: function() {
+      var dealt = 0, dmg = 0;
+
+      var level = this.level+3;
+      log.info("baseDamageDef:");
+
+      dealt = level;
+      for (var id in this.equipment.rooms)
+      {
+        var item = this.equipment.rooms[id];
+        if (item) {
+          var eq_multi = (id === 1) ? 4 : 2;
+          var def = (ItemTypes.getData(item.itemKind).modifier * eq_multi + item.itemNumber * eq_multi);
+          dealt += ~~(def * ((item.itemDurability / item.itemDurabilityMax * 0.5) + 0.5));
+        }
+      }
+
+      log.info("dealt="+dealt);
+      var lvl = Types.getDefenseLevel(this.stats.exp.defense);
+      var power = ((lvl / 50) + 1);
+      log.info("power="+power);
+      var min = ~~(level*power);
+      var max = ~~(min*2);
+
+      log.info("dealtrange="+dealt);
+      // Players Stat affects Damage.
+      var mods = (this.mod ? this.mod.defense : 0);
+      dealt += ~~((this.stats.defense*4)+mods) + this.stats.luck;
+
+      log.info("dealtstats="+dealt);
+
+      dmg = Utils.randomRangeInt(min, max) + dealt;
+
+      min = ~~(min + dealt);
+      max = ~~((max+dealt) * 1.75);
+
+      return [min,max];
+      //return dmg;
+    },
+
+    onKeyMove: function (callback) {
+      this.key_move_callback = callback;
+    },
+
+    hit: function(orientation) {
+        this.fsm = "ATTACK";
+        this.forceStop();
+        this._super(orientation);
+    },
+
+    revive: function () {
+      this.isDead = false;
+      this.isDying = false;
+      this.freeze = false;
+      this.stats.hp = this.stats.hpMax;
+      this.stats.ep = this.stats.epMax;
+      this.disengage();
+    },
+
+    respawn: function () {
+      this.restoreSprite(0);
+      this.restoreSprite(1);
+      this.forceStop();
+      this.setOrientation(Types.Orientations.DOWN);
+      this.idle(this.orientation);
+      this.fsm = "IDLE";
+    },
+
+    setPosition: function (x, y) {
+      this._super(x,y);
+      this.keyMove = false;
+
+      if (this.holdingBlock)
+      {
+        var pos = this.getTilePositionNextTo(this.orientation, 1);
+        this.holdingBlock.setPosition(pos[0], pos[1]);
+      }
+
+      //log.info("setPosition, rx:"+(x % G_TILESIZE)+", ry:"+(y % G_TILESIZE));
+    },
+/*
+    followPath: function(path) {
+      this._followPath(path);
+    },
+
+    _followPath: function(path) {
+        if(path.length > 1) { // Length of 1 means the player has clicked on himself
+            this.path = path;
+            this.step = 1;
+
+            if(this.start_pathing_callback) {
+                this.start_pathing_callback(path);
+                this.updateMovement();
+            }
+            if(this.before_move_callback) {
+                this.before_move_callback();
+            }
+        }
+    },
+*/
+    harvestOn: function(type) {
+      var self = this;
+      var tmptype = type;
+      var harvest = function () {
+        self.setOrientation(self.orientation);
+        self.fsm = "HARVEST";
+        self.animate("atk", self.atkSpeed, 1, function () {
+          self.idle(self.orientation);
+        });
+        if (tmptype === "any")
+          self.hideWeapon = true;
+      };
+      harvest();
+      clearInterval(this.harvestTimeout);
+      this.harvestTimeout = setInterval(function () {
+        if (!self.harvestTimeout) {
+          self.forceStop();
+          return;
+        }
+        if (self.target && !(self.target.type === Types.EntityTypes.NODE)) {
+          self.forceStop();
+          return;
+        }
+        harvest();
+      },1000);
+      this.startHarvestTime = Date.now();
+    },
+
+    harvestOff: function () {
+      if (this.fsm === "HARVEST") {
+        clearInterval(this.harvestTimeout);
+        this.harvestTimeout = null;
+        this.startHarvestTime = 0;
+        this.hideWeapon = false;
+      }
+    },
+
+    /**
+     *
+     */
+    makeAttack: function(entity) {
+      log.info("makeAttack " + entity.id);
+      var time = game.currentTime;
+      var skillId = (this.attackSkill) ? this.attackSkill.skillId : -1;
+
+      if (this === entity || this.isDead || this.isDying) // sanity check.
+        return null;
+
+      if (entity && entity.isDead)
+      {
+        this.removeTarget();
+        return null;
+      }
+
+      if (this.isMoving() || this.isMovingPath())
+        return;
+
+      this.setTarget(entity);
+
+      this.lookAtEntity(entity);
+      if (!this.canReach(entity))
+      {
+        //this.setTarget(entity);
+        if (!this.followAttack(entity))
+          return "attack_toofar";
+        else {
+          return "attack_moving";
+        }
+      }
+      log.info("CAN REACH TARGET!!");
+
+      if (!this.canAttack(time))
+      {
+        log.info("CANNOT ATTACK DUE TO TIME.");
+        return "attack_outoftime";
+      }
+
+      if (this.hit() && this.hasTarget()) {
+        if (this.attackSkill)
+          this.attackSkill.activated = true;
+        return "attack_ok";
+      }
+
+      return "attack_aborted";
+    },
+
+    resetPosition: function (x,y) {
+      this.movement.stop();
+      this.keyMove = false;
+      this.forceStop();
+      this.setPosition(x,y);
+      this.fsm = "IDLE";
+    },
+
+    setSpriteByIndex: function (index, num) {
+      var sprite = game.sprites[AppearanceData[num].sprite];
+      this.setSprite(sprite, index);
+    }
+  });
+
+  return Player;
+});

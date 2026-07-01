@@ -1,0 +1,212 @@
+TODO:
+
+[Improvement] CLIENT MOBILE - Make menu Items a little bigger.
+
+[BUG] CLIENT MOBILE - Attack with AOE causes continued AOE damage.
+
+
+CLIENT/SERVER - Work out why Exp keeps on resetting.
+
+CLIENT - Quest Window mouse pointer not working.
+
+CLIENT - Quest Window, Quest Entry not showing correct sprite for fires quest.
+
+CLIENT - Move stamina bar to top left window.
+
+CLIENT - Shortcuts - Move shortcuts to horizontal bottom, make numbered first, only show gamepad option when enabled.
+
+CLIENT - GUI - Allow possible scaling.
+
+CLIENT - NPC - Add NPC question marks for available quests.
+
+CLIENT/SERVER - NPC - Allow multiple quests from the same NPC.
+
+CLIENT/SERVER - Reduce damage variance 1.0-1.1.
+
+CLIENT - Add Exp progress in Skills Window for each skill.
+
+SERVER - Sometimes it reports the user is logged in at startup, when they aren't.
+
+CLIENT - Keyboard movement appears jerky, needs fixing.
+
+DONE:
+
+CLIENT - When moving into attack sometimes the moveOrientation is still set causing after attack wandering.
+
+CLIENT - Health Pots seems to change the Health Bar twice instead of once.
+
+SERVER/CLIENT - To reduce damage variance by adjusting min/max damage.
+
+SERVER/CLIENT - Up Defense a little bit so it's more useful.
+
+CLIENT - Pathfinding wasnt moving characters within tiles properly.
+
+CLIENT - Shortcut minor bug when new shortcut is added a small delay occurs if the shortcut is on cooldown.
+
+CLIENT - If Item Stack consumable is last one and activated, cooldown shows for that slot when it should not.
+
+CLIENT - Clicking on a consumable in Inventory does not execute a cooldown for all shortcut consumables.
+
+CLIENT - Fix player targeting.
+
+SERVER - Interacting with static objects if under time before using again, comes up with a harvest warning which needs to be a generic message.
+
+SERVER - Block user connects when player is in world at user-server side.
+
+SERVER - Better user player logging in sequence.
+
+SERVER - On UserHandler connection dropping store packets and re-send on a new connection.
+
+CLIENT - Player/User Window is still a little too large for horizontal view on mobile.
+
+CLIENT - When click dragging to another item with a full item count, the drop dialog should NOT display.
+
+CLIENT - Resize Achievement and Quest Alert, it's off Center. So is character dialog panel.
+
+CLIENT - Resize user/player windows on start by reducing height to fit horizontally.
+
+CLIENT - Click on Looks Window does not auto load look items.
+
+CLIENT - Clicking on Looks Unlock Preview Armor is not working.
+
+CLIENT - Fix Menu z-index ordering and layout.
+
+CLIENT - Fix Store Pave Navigating positioning and layout.
+
+CLIENT - When assigning shortcuts while a cooldown is occuring some skills sometimes bug.
+
+CLIENT - Disable assigning shortcuts when it has a cooldown.
+
+SERVER - When setting a new map, make a new function, and clear the player grid variables.
+
+CLIENT - Make add stat button a little larger for mobile.
+CLIENT - Make chatlog appear by default, and move it a little up above the chat button.
+CLIENT - Make shortcut window a bit lower flush with the attack button for mobile.
+
+SERVER - On incorrect movement start check the coordinate difference is isValidGridPath
+  and estimate the time difference.
+
+CLIENT/SERVER - Fix rubber banding caused by incorrect movement when spamming keyboard presses.
+
+CLIENT - Achievements window heading is incorrectly formatted.
+
+CLIENT - Fix setting zoom.
+
+SERVER - Re-enabled Mod Reduction damage for Monsters.
+
+SERVER - Added XP mob/player mod rewards.
+
+CLIENT - Item click dragging to shortcuts isnt working.
+
+CLIENT/SERVER - Make Attack Recharge multiplier from 4s to 3s and x3 damage.
+
+CLIENT - Add download link to mobiles.
+
+CLIENT - Make Gamepad work with new Looks Dialogs.
+
+CLIENT - Fix attack and moving bug.
+
+CLIENT - Fix hash challenge error sometimes on start.
+
+CLIENT - Re-work appearance dialog, to include preview unlock and unlock button.
+
+CLIENT - When loading an item in shortcut if there are multiple shortcuts image width/height not loaded fast enough.
+CLIENT - Enable shortcut to shortcut dragging.
+
+CLIENT - DPAD mouse movement is not moving up/down/left/right properly.
+CLIENT - Enable selecting Inventory Gold in Inventory to transfer to Bank.
+
+CLIENT - Hide gold amount in Appearance Dialog.
+CLIENT - Fix short hand values for achievements.
+SERVER - Turn down xp rewards on achievements.
+SERVER - Turn up item xp rewards on armor, and possibly lower weapon xp.
+
+CLIENT - Attack skill can now target.
+CLIENT - Inventory Window no long has windows behind it in Auction/Bank.
+
+SERVER - Health stat level modifying does not show in client when adding points.
+CLIENT, When selecting other equipped items while an equipped item is selected, select the other equipment.
+SERVER, Scale gold making it better for harder mobs, less for easier ones.
+
+Add Drop function for InventoryHandler.
+
+BUG - Attacking sometimes jams the movement functions.
+
+BUG - In Looks Dialog some appearances have no item icon.
+
+FIX BUG Player sometimes jams and moves across with the wrong orientation.
+  user.js, player.move
+
+Add semi-transparent black to chat window.
+Adjust shortcut bar window.
+Equipping bow does not change animation.
+  - Slight bug when swapping to bow, Bow armor sprite does not swap.
+Chat button doesnt activate enter text prompt.
+
+
+Update shortcut equipment count when activating item.
+
+Harvest Entity sometimes does not remove Sword when destroying any.
+When NPC is targeted it's not shifting the target to an enemy next to the player.
+
+
+TEST - Also in enchant and repair make item deselected when Enchanting or repairing.
+TEST - Enchant and possibly Repair does not work for new equipment slots.
+
+
+NEED TEST - MAJOR FIX NEEDED: Craft Items can be duped swapping inventory slots.
+
+NEEDS TEST - Items in the Enchant that are not weapons or armor can be duped.
+TEST - You can swap a potion with a armor/weapon item, and they move into the shortcut slots.
+
+DONE - Sometimes the player when using auto-pathing wanders right off the screen.
+
+FIXED -Dropping Items jams the player when using direction keys and prob gamepad.
+DONE - Targeting NPC when nothing targetted looks for a near Mob, when it should just select the npc.
+
+
+COMPLETED:
+
+I think ok - Check messaging between clients.
+Not sure - Add auction price notify change in client.
+DONE - Smooth out key moves between clients.
+OK - Reduce size of dropped itemloot.
+done - Fix skills to scale with screen.
+done - Combat bar does not re-scale green bar width.
+done - Chatlog is hard to read on gamescale 2.
+done - Add username. not playername to store donations.
+test - Bubbles need adjustment.
+done - Tested stats change.
+Working - app.js:403 - Width and Height not clamping mouse properly.
+
+TODO:
+FIXED - Get equipment working so can equip/unequip etc.
+  NOTE-dragging to equipment does nothing otherwise working.
+  NOTE-Also bug in swapping items which has been fixed.
+
+FIXED - Character isnt in center of the screen.
+
+FIXED - Shortcuts key assignments and display in screen.
+
+Add Fatigue system to game to make use of energybar.
+
+Low priority - Entity sprite can go underneath some sprites and ordering is not preserved.
+
+IMPORTANT:
+
+FIXED - Spawning from TOwn to forest with keys does not work, needs to be implemented.
+FIXED - No gold is being added from Server.
+
+FIXED - Fix speech bubble alignment in renderer.
+  - Needs more test.
+
+Fixed in client needs rollout - Creating new character the default select Char is loading, not new char.
+
+Needs test - 4k Compatible display.
+
+Complete - WASD Keys for movement.
+  - Already done.
+
+FIXED - Fix Avatar Preview in HUD and in Looks Dialog. (Scale=2).
+
+TODO - Add attack and Target buttons for joystick mode.
