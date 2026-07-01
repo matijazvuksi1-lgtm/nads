@@ -25,7 +25,7 @@
   "verify_key": "",
   "world_name": "North America",
   "world_key": "test123"
-  "redis_host": "redis://red-d92ihhe7r5hc73fm9s0g",
+  "redis_host": "red-d92ihhe7r5hc73fm9s0g",
   "redis_port": 6379,
   "redis_password": ""
 }
