@@ -12,7 +12,7 @@
   "metrics_enabled": false,
   "use_one_port": true,
   "redis_port": 6379,
-  "redis_host": "redis://red-d92ihhe7r5hc73fm9s0g",
+  "redis_host": "red-d92ihhe7r5hc73fm9s0g",
   "redis_password": "",
   "memcached_host": "127.0.0.1",
   "memcached_port": 11212,
