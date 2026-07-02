@@ -74,6 +74,32 @@
     return list;
   }
 
+  function waitForProviders(timeoutMs) {
+    timeoutMs = timeoutMs || 4000;
+
+    return new Promise(function (resolve) {
+      var started = Date.now();
+
+      function check() {
+        var providers = getAllProviders();
+
+        if (providers.length) {
+          resolve(providers);
+          return;
+        }
+
+        if (Date.now() - started >= timeoutMs) {
+          resolve([]);
+          return;
+        }
+
+        setTimeout(check, 150);
+      }
+
+      check();
+    });
+  }
+
   function getSaved() {
     try {
       return JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
@@ -107,15 +133,6 @@
     if (preferWallet === 'okx') {
       var okx = providers.find(function (p) { return p && (p.isOkxWallet || p.isOKExWallet); });
       if (okx) return okx;
-    }
-
-    var saved = getSaved();
-    if (saved && saved.walletName) {
-      var savedName = String(saved.walletName).toLowerCase();
-      var savedProvider = providers.find(function (p) {
-        return providerName(p).toLowerCase() === savedName;
-      });
-      if (savedProvider) return savedProvider;
     }
 
     var phantomFirst = providers.find(function (p) { return p && p.isPhantom; });
@@ -164,29 +181,14 @@
 
     setTimeout(function () {
       if (el && el.parentNode) el.parentNode.removeChild(el);
-    }, 3500);
-  }
-
-  async function walletRequest(method, params) {
-    var provider = activeProvider || getEthereumProvider();
-
-    if (!provider || !provider.request) {
-      throw new Error('No EVM wallet found');
-    }
-
-    activeProvider = provider;
-
-    return await provider.request({
-      method: method,
-      params: params || []
-    });
+    }, 4500);
   }
 
   async function ensureMonadNetwork(provider) {
     provider = provider || activeProvider || getEthereumProvider();
 
     if (!provider || !provider.request) {
-      showWarning('No EVM wallet found. Install Phantom, MetaMask, Rabby or OKX.');
+      showWarning('No EVM wallet found. Open Phantom/MetaMask and refresh page.');
       return false;
     }
 
@@ -320,11 +322,18 @@
   }
 
   async function connectWallet(preferWallet) {
-    var providers = getAllProviders();
+    var providers = await waitForProviders(5000);
 
     if (!providers.length) {
-      showWarning('No EVM wallet found. Install Phantom, MetaMask, Rabby or OKX.');
-      window.open('https://phantom.com/download', '_blank', 'noopener,noreferrer');
+      showWarning('Wallet not detected. Unlock Phantom/MetaMask, allow extension on this site, then refresh.');
+
+      console.log('Wallet debug:', {
+        ethereum: !!window.ethereum,
+        phantom: !!window.phantom,
+        phantomEthereum: !!(window.phantom && window.phantom.ethereum),
+        providers: window.ethereum && window.ethereum.providers ? window.ethereum.providers.length : 0
+      });
+
       return null;
     }
 
@@ -396,6 +405,11 @@
     var provider = activeProvider || getEthereumProvider();
 
     if (!provider || !provider.request) {
+      var providers = await waitForProviders(3000);
+      provider = providers[0];
+    }
+
+    if (!provider || !provider.request) {
       throw new Error('No EVM wallet found');
     }
 
@@ -423,10 +437,10 @@
     if (disabled) {
       a.href = '#';
       a.className = 'is-disabled';
-      a.addEventListener('click', function (e) {
+      a.onclick = function (e) {
         e.preventDefault();
         showWarning(onDisabledMsg || 'Coming soon.');
-      });
+      };
     } else {
       a.href = href;
       a.target = '_blank';
@@ -446,19 +460,8 @@
     var panel = document.createElement('div');
     panel.id = 'lom-web3-panel';
 
-    panel.appendChild(makeLink(
-      'X',
-      cfg.xLink || '#',
-      !cfg.xLink || /YOUR_X_LINK_HERE/i.test(cfg.xLink),
-      'Add X link in client/custom/lom-web3-config.js'
-    ));
-
-    panel.appendChild(makeLink(
-      'Telegram',
-      cfg.telegramLink || '#',
-      !cfg.telegramLink || /YOUR_TELEGRAM_LINK_HERE/i.test(cfg.telegramLink),
-      'Add Telegram link in client/custom/lom-web3-config.js'
-    ));
+    panel.appendChild(makeLink('X', cfg.xLink || '#', false));
+    panel.appendChild(makeLink('Telegram', cfg.telegramLink || '#', false));
 
     var nadUrl = cfg.nadFunTokenUrl || cfg.nadFunUrl || 'https://nad.fun';
     panel.appendChild(makeLink('nad.fun', nadUrl, false));
@@ -466,16 +469,16 @@
     var ca = getTokenAddress();
     var caText = ca ? ('CA: ' + shortAddr(ca)) : 'CA soon';
     var caHref = ca ? ((cfg.monadExplorerUrl || 'https://monadvision.com') + '/address/' + ca) : '#';
-    panel.appendChild(makeLink(caText, caHref, !ca, 'CA will be added after nad.fun launch.'));
+    panel.appendChild(makeLink(caText, caHref, !ca, 'CA missing.'));
 
     var walletBtn = document.createElement('button');
     walletBtn.id = 'lom-connect-wallet-btn';
     walletBtn.type = 'button';
     walletBtn.textContent = hasWallet() ? 'Change wallet' : 'Connect Wallet';
-    walletBtn.addEventListener('click', function (e) {
+    walletBtn.onclick = function (e) {
       e.preventDefault();
       connectWallet();
-    });
+    };
     panel.appendChild(walletBtn);
 
     var status = document.createElement('span');
@@ -585,12 +588,13 @@
     });
   }
 
-  function bindAllProviders() {
-    getAllProviders().forEach(bindProviderEvents);
+  async function bindAllProviders() {
+    var providers = await waitForProviders(5000);
+    providers.forEach(bindProviderEvents);
   }
 
   async function autoDetectConnectedWallet() {
-    var providers = getAllProviders();
+    var providers = await waitForProviders(5000);
 
     for (var i = 0; i < providers.length; i++) {
       var provider = providers[i];
@@ -613,6 +617,8 @@
         }
       } catch (_) {}
     }
+
+    console.log('Wallet providers found:', providers.map(providerName));
   }
 
   function init() {
@@ -637,7 +643,25 @@
       return activeProvider || getEthereumProvider();
     },
     getAllProviders: getAllProviders,
-    request: walletRequest,
+    request: async function (method, params) {
+      var provider = activeProvider || getEthereumProvider();
+
+      if (!provider || !provider.request) {
+        var providers = await waitForProviders(3000);
+        provider = providers[0];
+      }
+
+      if (!provider || !provider.request) {
+        throw new Error('No EVM wallet found');
+      }
+
+      activeProvider = provider;
+
+      return await provider.request({
+        method: method,
+        params: params || []
+      });
+    },
     signMessage: signMessage,
     getTokenAddress: getTokenAddress,
     disconnectLocal: clearWallet,
