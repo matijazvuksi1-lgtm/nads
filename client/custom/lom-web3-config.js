@@ -1,10 +1,10 @@
 // Land of Mana Monad / $LoN config. Edit this file later.
 // CA can stay empty until your nad.fun launch. After launch paste the token CA below.
 window.LOM_WEB3_CONFIG = {
-  projectName: 'Land Of Mana',
+  projectName: 'Land Of Nads',
 
   // Put your real links here.
-  xLink: 'https://x.com/YOUR_X_LINK_HERE',
+  xLink: 'https://x.com/landofnads',
   telegramLink: 'https://t.me/YOUR_TELEGRAM_LINK_HERE',
 
   // nad.fun launch/token page. Leave token URL empty until you have the final page.
@@ -13,7 +13,7 @@ window.LOM_WEB3_CONFIG = {
 
   // $LoN token. Paste CA here after launch.
   tokenSymbol: '$LoN',
-  tokenName: 'Land of Mana',
+  tokenName: 'Land of Nads',
   tokenAddress: '',
   contractAddress: '',
   tokenDecimals: 18,
