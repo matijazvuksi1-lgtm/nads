@@ -5,9 +5,9 @@
   window.LoMWalletGateLoaded = true;
 
   var cfg = Object.assign({
-    projectName: 'Land Of Mana',
-    xLink: 'https://x.com/YOUR_X_LINK_HERE',
-    telegramLink: 'https://t.me/YOUR_TELEGRAM_LINK_HERE',
+    projectName: 'Land Of Nads',
+    xLink: 'https://x.com/landofnads',
+    telegramLink: 'https://t.me/landofnads',
     nadFunUrl: 'https://nad.fun',
     nadFunTokenUrl: '',
     contractAddress: '',
