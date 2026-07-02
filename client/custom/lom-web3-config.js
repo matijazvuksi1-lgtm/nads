@@ -5,7 +5,7 @@ window.LOM_WEB3_CONFIG = {
 
   // Put your real links here.
   xLink: 'https://x.com/landofnads',
-  telegramLink: 'https://t.me/YOUR_TELEGRAM_LINK_HERE',
+  telegramLink: 'https://t.me/landofnads',
 
   // nad.fun launch/token page. Leave token URL empty until you have the final page.
   nadFunUrl: 'https://nad.fun',
