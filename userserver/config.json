@@ -1,7 +1,7 @@
 {
   "protocol": "http",
-  "address": "127.0.0.1",
-  "port": 1342,
+  "address": "135.181.154.254",
+  "port": 1340,
   "user_password": "thisisatest",
   "https_cert": "",
   "https_key": "",
