@@ -9,13 +9,13 @@ window.LOM_WEB3_CONFIG = {
 
   // nad.fun launch/token page. Leave token URL empty until you have the final page.
   nadFunUrl: 'https://nad.fun',
-  nadFunTokenUrl: '',
+  nadFunTokenUrl: 'https://nad.fun/tokens/0x53Bc12b090CfC365E7394d1cC745F8ac04117777',
 
   // $LoN token. Paste CA here after launch.
   tokenSymbol: '$LoN',
   tokenName: 'Land of Nads',
-  tokenAddress: '',
-  contractAddress: '',
+  tokenAddress: '0x53Bc12b090CfC365E7394d1cC745F8ac04117777',
+  contractAddress: '0x53Bc12b090CfC365E7394d1cC745F8ac04117777',
   tokenDecimals: 18,
 
   // Monad mainnet.
