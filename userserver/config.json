@@ -18,7 +18,7 @@
   "memcached_port": 11212,
 
   "server_name" : "RRO2",
-  "world_id": 1,
+  "world_id": 0,
   "production": "heroku",
   "database": "redis",
   "version":97,
