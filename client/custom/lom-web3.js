@@ -13,7 +13,6 @@
     contractAddress: '0x53Bc12b090CfC365E7394d1cC745F8ac04117777',
     tokenAddress: '0x53Bc12b090CfC365E7394d1cC745F8ac04117777',
     tokenSymbol: '$LoN',
-
     monadChainIdHex: '0x8f',
     monadNetworkName: 'Monad Mainnet',
     monadRpcUrl: 'https://rpc.monad.xyz',
@@ -21,22 +20,21 @@
     nativeCurrencyName: 'MON',
     nativeCurrencySymbol: 'MON',
     nativeCurrencyDecimals: 18,
-
     requireWalletForRegister: true,
     requireWalletForLogin: true,
     askSignatureAfterConnect: true
   }, window.LOM_WEB3_CONFIG || {});
 
-  var STORAGE_KEY = 'lom_connected_wallet_v2_monad';
   var activeProvider = null;
+  var activeWallet = null;
+
+  function isEvmAddress(addr) {
+    return /^0x[a-fA-F0-9]{40}$/.test(String(addr || ''));
+  }
 
   function shortAddr(addr) {
     if (!addr || addr.length < 10) return addr || '';
     return addr.slice(0, 6) + '...' + addr.slice(-4);
-  }
-
-  function isEvmAddress(addr) {
-    return /^0x[a-fA-F0-9]{40}$/.test(String(addr || ''));
   }
 
   function providerName(provider) {
@@ -50,23 +48,24 @@
     return 'EVM Wallet';
   }
 
+  function addUnique(list, provider) {
+    if (!provider || !provider.request) return;
+    if (list.indexOf(provider) === -1) list.push(provider);
+  }
+
   function getAllProviders() {
     var list = [];
 
     try {
-      if (window.phantom && window.phantom.ethereum) {
-        list.push(window.phantom.ethereum);
-      }
+      if (window.phantom && window.phantom.ethereum) addUnique(list, window.phantom.ethereum);
     } catch (_) {}
 
     try {
       if (window.ethereum) {
         if (window.ethereum.providers && window.ethereum.providers.length) {
-          window.ethereum.providers.forEach(function (p) {
-            if (p && list.indexOf(p) === -1) list.push(p);
-          });
-        } else if (list.indexOf(window.ethereum) === -1) {
-          list.push(window.ethereum);
+          window.ethereum.providers.forEach(function (p) { addUnique(list, p); });
+        } else {
+          addUnique(list, window.ethereum);
         }
       }
     } catch (_) {}
@@ -75,121 +74,39 @@
   }
 
   function waitForProviders(timeoutMs) {
-    timeoutMs = timeoutMs || 5000;
-
+    timeoutMs = timeoutMs || 6000;
     return new Promise(function (resolve) {
       var started = Date.now();
-
       function check() {
         var providers = getAllProviders();
-
-        if (providers.length) {
+        if (providers.length || Date.now() - started >= timeoutMs) {
           resolve(providers);
           return;
         }
-
-        if (Date.now() - started >= timeoutMs) {
-          resolve([]);
-          return;
-        }
-
         setTimeout(check, 150);
       }
-
       check();
     });
   }
 
-  function getSaved() {
-    try {
-      return JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-    } catch (_) {
-      return null;
-    }
-  }
-
-  function getEthereumProvider(preferWallet) {
-    var providers = getAllProviders();
-
-    if (!providers.length) return null;
-
+  function pickPreferredProvider(providers, preferWallet) {
     preferWallet = String(preferWallet || '').toLowerCase();
 
-    if (preferWallet === 'phantom') {
-      var phantom = providers.find(function (p) {
-        return p && p.isPhantom;
+    if (preferWallet) {
+      var named = providers.find(function (p) {
+        var n = providerName(p).toLowerCase();
+        return n === preferWallet || n.indexOf(preferWallet) >= 0;
       });
-
-      if (phantom) return phantom;
+      if (named) return named;
     }
 
-    if (preferWallet === 'metamask') {
-      var metamask = providers.find(function (p) {
-        return p && p.isMetaMask;
-      });
+    var phantom = providers.find(function (p) { return p && p.isPhantom; });
+    if (phantom) return phantom;
 
-      if (metamask) return metamask;
-    }
+    var meta = providers.find(function (p) { return p && p.isMetaMask; });
+    if (meta) return meta;
 
-    if (preferWallet === 'rabby') {
-      var rabby = providers.find(function (p) {
-        return p && p.isRabby;
-      });
-
-      if (rabby) return rabby;
-    }
-
-    if (preferWallet === 'okx') {
-      var okx = providers.find(function (p) {
-        return p && (p.isOkxWallet || p.isOKExWallet);
-      });
-
-      if (okx) return okx;
-    }
-
-    var phantomFirst = providers.find(function (p) {
-      return p && p.isPhantom;
-    });
-
-    if (phantomFirst) return phantomFirst;
-
-    var metaFirst = providers.find(function (p) {
-      return p && p.isMetaMask;
-    });
-
-    if (metaFirst) return metaFirst;
-
-    return providers[0];
-  }
-
-  function saveWallet(data) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    window.dispatchEvent(new CustomEvent('lom:wallet-connected', { detail: data }));
-  }
-
-  function clearWallet() {
-    localStorage.removeItem(STORAGE_KEY);
-    updatePanel();
-    window.dispatchEvent(new Event('lom:wallet-disconnected'));
-  }
-
-  function hasWallet() {
-    var saved = getSaved();
-    return !!(saved && isEvmAddress(saved.address) && saved.realConnected === true);
-  }
-
-  function statusText() {
-    var saved = getSaved();
-
-    if (saved && saved.address && saved.realConnected === true) {
-      return '✅ ' + shortAddr(saved.address);
-    }
-
-    if (saved && saved.address && saved.realConnected !== true) {
-      return 'Connect Wallet';
-    }
-
-    return 'Wallet required';
+    return providers[0] || null;
   }
 
   function showWarning(msg) {
@@ -202,33 +119,56 @@
     document.body.appendChild(el);
 
     setTimeout(function () {
-      if (el && el.parentNode) {
-        el.parentNode.removeChild(el);
-      }
+      if (el && el.parentNode) el.parentNode.removeChild(el);
     }, 4500);
   }
 
+  function getWallet() {
+    if (activeWallet && isEvmAddress(activeWallet.address)) return activeWallet;
+    return null;
+  }
+
+  function hasWallet() {
+    return !!getWallet();
+  }
+
+  function statusText() {
+    var w = getWallet();
+    if (w && w.address) return '✅ ' + shortAddr(w.address);
+    return 'Wallet required';
+  }
+
+  function saveWalletRuntime(data) {
+    activeWallet = data;
+    window.dispatchEvent(new CustomEvent('lom:wallet-connected', { detail: data }));
+    updatePanel();
+  }
+
+  function clearWallet() {
+    activeWallet = null;
+    activeProvider = null;
+    try { localStorage.removeItem('lom_connected_wallet_v2_monad'); } catch (_) {}
+    updatePanel();
+    window.dispatchEvent(new Event('lom:wallet-disconnected'));
+  }
+
   async function ensureMonadNetwork(provider) {
-    provider = provider || activeProvider || getEthereumProvider();
+    provider = provider || activeProvider;
 
     if (!provider || !provider.request) {
-      showWarning('No EVM wallet found. Open Phantom/MetaMask and refresh page.');
+      showWarning('No EVM wallet found. Unlock Phantom/MetaMask and refresh.');
       return false;
     }
 
     try {
       var chainId = await provider.request({ method: 'eth_chainId' });
-
-      if ((chainId || '').toLowerCase() === (cfg.monadChainIdHex || '0x8f').toLowerCase()) {
-        return true;
-      }
+      if ((chainId || '').toLowerCase() === (cfg.monadChainIdHex || '0x8f').toLowerCase()) return true;
 
       try {
         await provider.request({
           method: 'wallet_switchEthereumChain',
           params: [{ chainId: cfg.monadChainIdHex || '0x8f' }]
         });
-
         return true;
       } catch (switchErr) {
         if (
@@ -253,10 +193,8 @@
               blockExplorerUrls: [cfg.monadExplorerUrl || 'https://monadvision.com']
             }]
           });
-
           return true;
         }
-
         throw switchErr;
       }
     } catch (err) {
@@ -313,12 +251,10 @@
         btn.style.fontWeight = 'bold';
         btn.style.background = '#d9b44a';
         btn.style.color = '#172033';
-
         btn.onclick = function () {
           box.remove();
           resolve(provider);
         };
-
         box.appendChild(btn);
       });
 
@@ -334,61 +270,41 @@
       cancel.style.cursor = 'pointer';
       cancel.style.background = '#39465f';
       cancel.style.color = '#fff';
-
       cancel.onclick = function () {
         box.remove();
         resolve(null);
       };
-
       box.appendChild(cancel);
+
       document.body.appendChild(box);
     });
   }
 
   async function connectWallet(preferWallet) {
-    // delete old saved fake wallet first; it will be saved again only after real wallet responds
-    localStorage.removeItem(STORAGE_KEY);
-    updatePanel();
-
-    var providers = await waitForProviders(5000);
+    var providers = await waitForProviders(6000);
 
     if (!providers.length) {
-      showWarning('Wallet not detected. Unlock Phantom/MetaMask, allow extension on this site, then refresh.');
-
+      showWarning('Wallet not detected. Unlock Phantom/MetaMask, allow this site, then refresh.');
       console.log('Wallet debug:', {
         ethereum: !!window.ethereum,
         phantom: !!window.phantom,
         phantomEthereum: !!(window.phantom && window.phantom.ethereum),
         providers: window.ethereum && window.ethereum.providers ? window.ethereum.providers.length : 0
       });
-
       return null;
     }
 
     try {
-      var provider;
-
-      if (preferWallet) {
-        provider = getEthereumProvider(preferWallet);
-      } else {
-        provider = await makeWalletChoice(providers);
-      }
-
+      var provider = preferWallet ? pickPreferredProvider(providers, preferWallet) : await makeWalletChoice(providers);
       if (!provider) return null;
 
       activeProvider = provider;
 
-      var accounts = await provider.request({
-        method: 'eth_requestAccounts'
-      });
-
+      var accounts = await provider.request({ method: 'eth_requestAccounts' });
       var address = accounts && accounts[0];
 
       if (!address) throw new Error('No wallet selected');
-
-      if (!isEvmAddress(address)) {
-        throw new Error('Wrong wallet type. Use EVM address starting with 0x.');
-      }
+      if (!isEvmAddress(address)) throw new Error('Wrong wallet type. Use EVM address starting with 0x.');
 
       await ensureMonadNetwork(provider);
 
@@ -420,9 +336,7 @@
         }
       }
 
-      saveWallet(payload);
-      updatePanel();
-
+      saveWalletRuntime(payload);
       return payload;
     } catch (err) {
       showWarning('Wallet connect failed: ' + (err && err.message ? err.message : err));
@@ -431,32 +345,31 @@
   }
 
   async function signMessage(message, address) {
-    var provider = activeProvider || getEthereumProvider();
+    var w = getWallet();
+    var provider = activeProvider;
 
-    if (!provider || !provider.request) {
-      var providers = await waitForProviders(3000);
-      provider = providers[0];
+    if (!provider || !provider.request || !w) {
+      w = await connectWallet();
+      provider = activeProvider;
     }
 
-    if (!provider || !provider.request) {
-      throw new Error('No EVM wallet found');
-    }
+    if (!provider || !provider.request || !w) throw new Error('Wallet not connected');
 
-    var wallet = address || (getSaved() && getSaved().address);
-
-    if (!wallet) {
-      var accounts = await provider.request({ method: 'eth_requestAccounts' });
-      wallet = accounts && accounts[0];
-    }
-
-    if (!wallet) throw new Error('No wallet selected');
-
-    activeProvider = provider;
-
+    var wallet = address || w.address;
     return await provider.request({
       method: 'personal_sign',
       params: [message, wallet]
     });
+  }
+
+  async function request(method, params) {
+    var provider = activeProvider;
+    if (!provider || !provider.request) {
+      var w = await connectWallet();
+      provider = activeProvider;
+      if (!w || !provider) throw new Error('Wallet not connected');
+    }
+    return await provider.request({ method: method, params: params || [] });
   }
 
   function makeLink(label, href, disabled, onDisabledMsg) {
@@ -489,8 +402,8 @@
     var panel = document.createElement('div');
     panel.id = 'lom-web3-panel';
 
-    panel.appendChild(makeLink('X', cfg.xLink || '#', false));
-    panel.appendChild(makeLink('Telegram', cfg.telegramLink || '#', false));
+    panel.appendChild(makeLink('X', cfg.xLink || '#', !cfg.xLink, 'Add X link in config.'));
+    panel.appendChild(makeLink('Telegram', cfg.telegramLink || '#', !cfg.telegramLink, 'Add Telegram link in config.'));
 
     var nadUrl = cfg.nadFunTokenUrl || cfg.nadFunUrl || 'https://nad.fun';
     panel.appendChild(makeLink('nad.fun', nadUrl, false));
@@ -504,12 +417,10 @@
     walletBtn.id = 'lom-connect-wallet-btn';
     walletBtn.type = 'button';
     walletBtn.textContent = hasWallet() ? 'Change wallet' : 'Connect Wallet';
-
     walletBtn.onclick = function (e) {
       e.preventDefault();
       connectWallet();
     };
-
     panel.appendChild(walletBtn);
 
     var status = document.createElement('span');
@@ -537,15 +448,13 @@
     if (!el) return false;
 
     var text = '';
-
     try {
-      text = [
-        el.textContent,
-        el.value,
-        el.getAttribute && el.getAttribute('aria-label'),
-        el.id,
-        el.className
-      ].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim().toUpperCase();
+      text = [el.textContent, el.value, el.getAttribute && el.getAttribute('aria-label'), el.id, el.className]
+        .filter(Boolean)
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toUpperCase();
     } catch (_) {
       return false;
     }
@@ -566,17 +475,11 @@
       if (isBlockedAction(el)) {
         e.preventDefault();
         e.stopPropagation();
-
-        if (e.stopImmediatePropagation) {
-          e.stopImmediatePropagation();
-        }
-
+        if (e.stopImmediatePropagation) e.stopImmediatePropagation();
         showWarning('Connect wallet first, then continue.');
         connectWallet();
-
         return false;
       }
-
       el = el.parentNode;
       depth++;
     }
@@ -586,7 +489,6 @@
     if (hasWallet()) return;
 
     var formText = (e.target && e.target.textContent || '').toUpperCase();
-
     if (/REGISTER|LOGIN/.test(formText)) {
       e.preventDefault();
       e.stopPropagation();
@@ -598,23 +500,22 @@
 
   function bindProviderEvents(provider) {
     if (!provider || !provider.on || provider._lomBound) return;
-
     provider._lomBound = true;
 
     provider.on('accountsChanged', function (accounts) {
-      if (accounts && accounts[0]) {
-        saveWallet(Object.assign(getSaved() || {}, {
+      if (accounts && accounts[0] && isEvmAddress(accounts[0])) {
+        activeProvider = provider;
+        saveWalletRuntime({
           address: accounts[0],
           connectedAt: new Date().toISOString(),
           host: location.host,
+          chainId: cfg.monadChainIdHex || '0x8f',
           walletName: providerName(provider),
           realConnected: true
-        }));
+        });
       } else {
         clearWallet();
       }
-
-      updatePanel();
     });
 
     provider.on('chainChanged', function () {
@@ -623,46 +524,38 @@
   }
 
   async function bindAllProviders() {
-    var providers = await waitForProviders(5000);
+    var providers = await waitForProviders(6000);
     providers.forEach(bindProviderEvents);
+    console.log('LoN wallet providers found:', providers.map(providerName));
   }
 
   async function autoDetectConnectedWallet() {
-    // only auto-detect real connected accounts from provider; old localStorage alone is ignored
-    var providers = await waitForProviders(5000);
+    var providers = await waitForProviders(6000);
 
     for (var i = 0; i < providers.length; i++) {
       var provider = providers[i];
-
       try {
         var accounts = await provider.request({ method: 'eth_accounts' });
-
-        if (accounts && accounts[0] && !hasWallet()) {
+        if (accounts && accounts[0] && isEvmAddress(accounts[0])) {
           activeProvider = provider;
-
-          saveWallet({
+          saveWalletRuntime({
             address: accounts[0],
             connectedAt: new Date().toISOString(),
             host: location.host,
+            chainId: cfg.monadChainIdHex || '0x8f',
             walletName: providerName(provider),
             realConnected: true
           });
-
-          updatePanel();
           return;
         }
       } catch (_) {}
     }
 
-    console.log('Wallet providers found:', providers.map(providerName));
+    clearWallet();
   }
 
   function init() {
-    // clear old cached wallet from older versions without realConnected flag
-    var saved = getSaved();
-    if (saved && saved.address && saved.realConnected !== true) {
-      localStorage.removeItem(STORAGE_KEY);
-    }
+    try { localStorage.removeItem('lom_connected_wallet_v2_monad'); } catch (_) {}
 
     buildPanel();
     updatePanel();
@@ -680,34 +573,10 @@
     connect: connectWallet,
     ensureMonadNetwork: ensureMonadNetwork,
     hasWallet: hasWallet,
-    getWallet: getSaved,
-
-    getProvider: function () {
-      return activeProvider || getEthereumProvider();
-    },
-
+    getWallet: getWallet,
+    getProvider: function () { return activeProvider; },
     getAllProviders: getAllProviders,
-
-    request: async function (method, params) {
-      var provider = activeProvider || getEthereumProvider();
-
-      if (!provider || !provider.request) {
-        var providers = await waitForProviders(3000);
-        provider = providers[0];
-      }
-
-      if (!provider || !provider.request) {
-        throw new Error('No EVM wallet found');
-      }
-
-      activeProvider = provider;
-
-      return await provider.request({
-        method: method,
-        params: params || []
-      });
-    },
-
+    request: request,
     signMessage: signMessage,
     getTokenAddress: getTokenAddress,
     disconnectLocal: clearWallet,
