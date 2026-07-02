@@ -13,6 +13,7 @@
     contractAddress: '0x53Bc12b090CfC365E7394d1cC745F8ac04117777',
     tokenAddress: '0x53Bc12b090CfC365E7394d1cC745F8ac04117777',
     tokenSymbol: '$LoN',
+
     monadChainIdHex: '0x8f',
     monadNetworkName: 'Monad Mainnet',
     monadRpcUrl: 'https://rpc.monad.xyz',
@@ -20,20 +21,110 @@
     nativeCurrencyName: 'MON',
     nativeCurrencySymbol: 'MON',
     nativeCurrencyDecimals: 18,
+
     requireWalletForRegister: true,
     requireWalletForLogin: true,
     askSignatureAfterConnect: true
   }, window.LOM_WEB3_CONFIG || {});
 
   var STORAGE_KEY = 'lom_connected_wallet_v2_monad';
+  var activeProvider = null;
 
   function shortAddr(addr) {
     if (!addr || addr.length < 10) return addr || '';
     return addr.slice(0, 6) + '...' + addr.slice(-4);
   }
 
+  function isEvmAddress(addr) {
+    return /^0x[a-fA-F0-9]{40}$/.test(String(addr || ''));
+  }
+
+  function providerName(provider) {
+    if (!provider) return 'Unknown';
+    if (provider.isPhantom) return 'Phantom';
+    if (provider.isMetaMask) return 'MetaMask';
+    if (provider.isRabby) return 'Rabby';
+    if (provider.isOkxWallet || provider.isOKExWallet) return 'OKX';
+    if (provider.isCoinbaseWallet) return 'Coinbase';
+    if (provider.isTrust) return 'Trust Wallet';
+    return 'EVM Wallet';
+  }
+
+  function getAllProviders() {
+    var list = [];
+
+    try {
+      if (window.phantom && window.phantom.ethereum) {
+        list.push(window.phantom.ethereum);
+      }
+    } catch (_) {}
+
+    try {
+      if (window.ethereum) {
+        if (window.ethereum.providers && window.ethereum.providers.length) {
+          window.ethereum.providers.forEach(function (p) {
+            if (p && list.indexOf(p) === -1) list.push(p);
+          });
+        } else if (list.indexOf(window.ethereum) === -1) {
+          list.push(window.ethereum);
+        }
+      }
+    } catch (_) {}
+
+    return list;
+  }
+
   function getSaved() {
-    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); } catch (_) { return null; }
+    try {
+      return JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function getEthereumProvider(preferWallet) {
+    var providers = getAllProviders();
+
+    if (!providers.length) return null;
+
+    preferWallet = String(preferWallet || '').toLowerCase();
+
+    if (preferWallet === 'phantom') {
+      var phantom = providers.find(function (p) { return p && p.isPhantom; });
+      if (phantom) return phantom;
+    }
+
+    if (preferWallet === 'metamask') {
+      var metamask = providers.find(function (p) { return p && p.isMetaMask; });
+      if (metamask) return metamask;
+    }
+
+    if (preferWallet === 'rabby') {
+      var rabby = providers.find(function (p) { return p && p.isRabby; });
+      if (rabby) return rabby;
+    }
+
+    if (preferWallet === 'okx') {
+      var okx = providers.find(function (p) { return p && (p.isOkxWallet || p.isOKExWallet); });
+      if (okx) return okx;
+    }
+
+    var saved = getSaved();
+    if (saved && saved.walletName) {
+      var savedName = String(saved.walletName).toLowerCase();
+      var savedProvider = providers.find(function (p) {
+        return providerName(p).toLowerCase() === savedName;
+      });
+      if (savedProvider) return savedProvider;
+    }
+
+    var phantomFirst = providers.find(function (p) { return p && p.isPhantom; });
+    if (phantomFirst) return phantomFirst;
+
+    var metaFirst = providers.find(function (p) { return p && p.isMetaMask; });
+    if (metaFirst) return metaFirst;
+
+    return providers[0];
   }
 
   function saveWallet(data) {
@@ -49,35 +140,80 @@
 
   function hasWallet() {
     var saved = getSaved();
-    return !!(saved && /^0x[a-fA-F0-9]{40}$/.test(saved.address || ''));
+    return !!(saved && isEvmAddress(saved.address));
   }
 
   function statusText() {
     var saved = getSaved();
-    return saved && saved.address ? ('✅ ' + shortAddr(saved.address)) : 'Wallet required';
+
+    if (saved && saved.address) {
+      return '✅ ' + shortAddr(saved.address);
+    }
+
+    return 'Wallet required';
   }
 
   function showWarning(msg) {
     var old = document.getElementById('lom-wallet-warning');
     if (old) old.remove();
+
     var el = document.createElement('div');
     el.id = 'lom-wallet-warning';
     el.textContent = msg || 'Connect wallet first.';
     document.body.appendChild(el);
-    setTimeout(function () { if (el && el.parentNode) el.parentNode.removeChild(el); }, 3500);
+
+    setTimeout(function () {
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+    }, 3500);
   }
 
-  async function ensureMonadNetwork() {
-    if (!window.ethereum || !window.ethereum.request) return false;
+  async function walletRequest(method, params) {
+    var provider = activeProvider || getEthereumProvider();
+
+    if (!provider || !provider.request) {
+      throw new Error('No EVM wallet found');
+    }
+
+    activeProvider = provider;
+
+    return await provider.request({
+      method: method,
+      params: params || []
+    });
+  }
+
+  async function ensureMonadNetwork(provider) {
+    provider = provider || activeProvider || getEthereumProvider();
+
+    if (!provider || !provider.request) {
+      showWarning('No EVM wallet found. Install Phantom, MetaMask, Rabby or OKX.');
+      return false;
+    }
+
     try {
-      var chainId = await window.ethereum.request({ method: 'eth_chainId' });
-      if ((chainId || '').toLowerCase() === (cfg.monadChainIdHex || '0x8f').toLowerCase()) return true;
+      var chainId = await provider.request({ method: 'eth_chainId' });
+
+      if ((chainId || '').toLowerCase() === (cfg.monadChainIdHex || '0x8f').toLowerCase()) {
+        return true;
+      }
+
       try {
-        await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: cfg.monadChainIdHex || '0x8f' }] });
+        await provider.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: cfg.monadChainIdHex || '0x8f' }]
+        });
+
         return true;
       } catch (switchErr) {
-        if (switchErr && (switchErr.code === 4902 || String(switchErr.message || '').indexOf('Unrecognized') >= 0)) {
-          await window.ethereum.request({
+        if (
+          switchErr &&
+          (
+            switchErr.code === 4902 ||
+            String(switchErr.message || '').indexOf('Unrecognized') >= 0 ||
+            String(switchErr.message || '').indexOf('not been added') >= 0
+          )
+        ) {
+          await provider.request({
             method: 'wallet_addEthereumChain',
             params: [{
               chainId: cfg.monadChainIdHex || '0x8f',
@@ -91,8 +227,10 @@
               blockExplorerUrls: [cfg.monadExplorerUrl || 'https://monadvision.com']
             }]
           });
+
           return true;
         }
+
         throw switchErr;
       }
     } catch (err) {
@@ -101,35 +239,144 @@
     }
   }
 
-  async function connectWallet() {
-    if (!window.ethereum || !window.ethereum.request) {
-      showWarning('No wallet found. Install MetaMask or Rabby, then refresh.');
-      window.open('https://metamask.io/download/', '_blank', 'noopener,noreferrer');
+  function makeWalletChoice(providers) {
+    return new Promise(function (resolve) {
+      if (!providers || providers.length <= 1) {
+        resolve(providers && providers[0] ? providers[0] : null);
+        return;
+      }
+
+      var old = document.getElementById('lom-wallet-picker');
+      if (old) old.remove();
+
+      var box = document.createElement('div');
+      box.id = 'lom-wallet-picker';
+      box.style.position = 'fixed';
+      box.style.left = '50%';
+      box.style.top = '50%';
+      box.style.transform = 'translate(-50%, -50%)';
+      box.style.zIndex = '999999';
+      box.style.background = 'rgba(10, 20, 35, 0.96)';
+      box.style.border = '2px solid #f0c15a';
+      box.style.borderRadius = '12px';
+      box.style.padding = '18px';
+      box.style.color = '#fff';
+      box.style.fontFamily = 'Arial, sans-serif';
+      box.style.minWidth = '260px';
+      box.style.textAlign = 'center';
+      box.style.boxShadow = '0 0 30px rgba(0,0,0,0.55)';
+
+      var title = document.createElement('div');
+      title.textContent = 'Choose wallet';
+      title.style.fontWeight = 'bold';
+      title.style.marginBottom = '12px';
+      title.style.fontSize = '18px';
+      box.appendChild(title);
+
+      providers.forEach(function (provider) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = providerName(provider);
+        btn.style.display = 'block';
+        btn.style.width = '100%';
+        btn.style.margin = '8px 0';
+        btn.style.padding = '10px';
+        btn.style.borderRadius = '8px';
+        btn.style.border = '0';
+        btn.style.cursor = 'pointer';
+        btn.style.fontWeight = 'bold';
+        btn.style.background = '#d9b44a';
+        btn.style.color = '#172033';
+
+        btn.onclick = function () {
+          box.remove();
+          resolve(provider);
+        };
+
+        box.appendChild(btn);
+      });
+
+      var cancel = document.createElement('button');
+      cancel.type = 'button';
+      cancel.textContent = 'Cancel';
+      cancel.style.display = 'block';
+      cancel.style.width = '100%';
+      cancel.style.margin = '12px 0 0';
+      cancel.style.padding = '8px';
+      cancel.style.borderRadius = '8px';
+      cancel.style.border = '0';
+      cancel.style.cursor = 'pointer';
+      cancel.style.background = '#39465f';
+      cancel.style.color = '#fff';
+
+      cancel.onclick = function () {
+        box.remove();
+        resolve(null);
+      };
+
+      box.appendChild(cancel);
+      document.body.appendChild(box);
+    });
+  }
+
+  async function connectWallet(preferWallet) {
+    var providers = getAllProviders();
+
+    if (!providers.length) {
+      showWarning('No EVM wallet found. Install Phantom, MetaMask, Rabby or OKX.');
+      window.open('https://phantom.com/download', '_blank', 'noopener,noreferrer');
       return null;
     }
 
     try {
-      var accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+      var provider;
+
+      if (preferWallet) {
+        provider = getEthereumProvider(preferWallet);
+      } else {
+        provider = await makeWalletChoice(providers);
+      }
+
+      if (!provider) return null;
+
+      activeProvider = provider;
+
+      var accounts = await provider.request({
+        method: 'eth_requestAccounts'
+      });
+
       var address = accounts && accounts[0];
+
       if (!address) throw new Error('No wallet selected');
-      await ensureMonadNetwork();
+
+      if (!isEvmAddress(address)) {
+        throw new Error('Wrong wallet type. Use EVM address starting with 0x.');
+      }
+
+      await ensureMonadNetwork(provider);
 
       var payload = {
         address: address,
         connectedAt: new Date().toISOString(),
         host: location.host,
-        chainId: cfg.monadChainIdHex || '0x8f'
+        chainId: cfg.monadChainIdHex || '0x8f',
+        walletName: providerName(provider)
       };
 
       if (cfg.askSignatureAfterConnect) {
-        var message = cfg.projectName + ' wallet verification\n' +
+        var message =
+          cfg.projectName + ' wallet verification\n' +
           'Domain: ' + location.host + '\n' +
           'Wallet: ' + address + '\n' +
           'Time: ' + payload.connectedAt + '\n' +
           'Only sign this if you trust this website.';
+
         try {
           payload.message = message;
-          payload.signature = await window.ethereum.request({ method: 'personal_sign', params: [message, address] });
+          payload.signature = await provider.request({
+            method: 'personal_sign',
+            params: [message, address]
+          });
         } catch (sigErr) {
           payload.signatureRejected = true;
         }
@@ -137,6 +384,7 @@
 
       saveWallet(payload);
       updatePanel();
+
       return payload;
     } catch (err) {
       showWarning('Wallet connect failed: ' + (err && err.message ? err.message : err));
@@ -144,18 +392,47 @@
     }
   }
 
+  async function signMessage(message, address) {
+    var provider = activeProvider || getEthereumProvider();
+
+    if (!provider || !provider.request) {
+      throw new Error('No EVM wallet found');
+    }
+
+    var wallet = address || (getSaved() && getSaved().address);
+
+    if (!wallet) {
+      var accounts = await provider.request({ method: 'eth_requestAccounts' });
+      wallet = accounts && accounts[0];
+    }
+
+    if (!wallet) throw new Error('No wallet selected');
+
+    activeProvider = provider;
+
+    return await provider.request({
+      method: 'personal_sign',
+      params: [message, wallet]
+    });
+  }
+
   function makeLink(label, href, disabled, onDisabledMsg) {
     var a = document.createElement('a');
     a.textContent = label;
+
     if (disabled) {
       a.href = '#';
       a.className = 'is-disabled';
-      a.addEventListener('click', function (e) { e.preventDefault(); showWarning(onDisabledMsg || 'Coming soon.'); });
+      a.addEventListener('click', function (e) {
+        e.preventDefault();
+        showWarning(onDisabledMsg || 'Coming soon.');
+      });
     } else {
       a.href = href;
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
     }
+
     return a;
   }
 
@@ -165,11 +442,23 @@
 
   function buildPanel() {
     if (document.getElementById('lom-web3-panel')) return;
+
     var panel = document.createElement('div');
     panel.id = 'lom-web3-panel';
 
-    panel.appendChild(makeLink('𝕏 X', cfg.xLink || '#', !cfg.xLink || /YOUR_X_LINK_HERE/i.test(cfg.xLink), 'Add X link in client/custom/lom-web3-config.js'));
-    panel.appendChild(makeLink('Telegram', cfg.telegramLink || '#', !cfg.telegramLink || /YOUR_TELEGRAM_LINK_HERE/i.test(cfg.telegramLink), 'Add Telegram link in client/custom/lom-web3-config.js'));
+    panel.appendChild(makeLink(
+      'X',
+      cfg.xLink || '#',
+      !cfg.xLink || /YOUR_X_LINK_HERE/i.test(cfg.xLink),
+      'Add X link in client/custom/lom-web3-config.js'
+    ));
+
+    panel.appendChild(makeLink(
+      'Telegram',
+      cfg.telegramLink || '#',
+      !cfg.telegramLink || /YOUR_TELEGRAM_LINK_HERE/i.test(cfg.telegramLink),
+      'Add Telegram link in client/custom/lom-web3-config.js'
+    ));
 
     var nadUrl = cfg.nadFunTokenUrl || cfg.nadFunUrl || 'https://nad.fun';
     panel.appendChild(makeLink('nad.fun', nadUrl, false));
@@ -183,7 +472,10 @@
     walletBtn.id = 'lom-connect-wallet-btn';
     walletBtn.type = 'button';
     walletBtn.textContent = hasWallet() ? 'Change wallet' : 'Connect Wallet';
-    walletBtn.addEventListener('click', function (e) { e.preventDefault(); connectWallet(); });
+    walletBtn.addEventListener('click', function (e) {
+      e.preventDefault();
+      connectWallet();
+    });
     panel.appendChild(walletBtn);
 
     var status = document.createElement('span');
@@ -202,36 +494,53 @@
   function updatePanel() {
     var status = document.getElementById('lom-wallet-status');
     var btn = document.getElementById('lom-connect-wallet-btn');
+
     if (status) status.textContent = statusText();
     if (btn) btn.textContent = hasWallet() ? 'Change wallet' : 'Connect Wallet';
   }
 
   function isBlockedAction(el) {
     if (!el) return false;
-    var text = '';
-    try {
-      text = [el.textContent, el.value, el.getAttribute && el.getAttribute('aria-label'), el.id, el.className]
-        .filter(Boolean).join(' ').replace(/s+/g, ' ').trim().toUpperCase();
-    } catch (_) { return false; }
 
-    if (cfg.requireWalletForRegister && /(^|)REGISTER(|$)/.test(text)) return true;
-    if (cfg.requireWalletForLogin && /(^|)LOGIN(|$)/.test(text)) return true;
+    var text = '';
+
+    try {
+      text = [
+        el.textContent,
+        el.value,
+        el.getAttribute && el.getAttribute('aria-label'),
+        el.id,
+        el.className
+      ].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim().toUpperCase();
+    } catch (_) {
+      return false;
+    }
+
+    if (cfg.requireWalletForRegister && /(^|\b)REGISTER(\b|$)/.test(text)) return true;
+    if (cfg.requireWalletForLogin && /(^|\b)LOGIN(\b|$)/.test(text)) return true;
+
     return false;
   }
 
   function guardEvent(e) {
     if (hasWallet()) return;
+
     var el = e.target;
     var depth = 0;
+
     while (el && el !== document && depth < 6) {
       if (isBlockedAction(el)) {
         e.preventDefault();
         e.stopPropagation();
+
         if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+
         showWarning('Connect wallet first, then continue.');
         connectWallet();
+
         return false;
       }
+
       el = el.parentNode;
       depth++;
     }
@@ -239,7 +548,9 @@
 
   function guardSubmit(e) {
     if (hasWallet()) return;
+
     var formText = (e.target && e.target.textContent || '').toUpperCase();
+
     if (/REGISTER|LOGIN/.test(formText)) {
       e.preventDefault();
       e.stopPropagation();
@@ -249,28 +560,72 @@
     }
   }
 
+  function bindProviderEvents(provider) {
+    if (!provider || !provider.on || provider._lomBound) return;
+
+    provider._lomBound = true;
+
+    provider.on('accountsChanged', function (accounts) {
+      if (accounts && accounts[0]) {
+        saveWallet(Object.assign(getSaved() || {}, {
+          address: accounts[0],
+          connectedAt: new Date().toISOString(),
+          host: location.host,
+          walletName: providerName(provider)
+        }));
+      } else {
+        clearWallet();
+      }
+
+      updatePanel();
+    });
+
+    provider.on('chainChanged', function () {
+      window.dispatchEvent(new Event('lom:chain-changed'));
+    });
+  }
+
+  function bindAllProviders() {
+    getAllProviders().forEach(bindProviderEvents);
+  }
+
+  async function autoDetectConnectedWallet() {
+    var providers = getAllProviders();
+
+    for (var i = 0; i < providers.length; i++) {
+      var provider = providers[i];
+
+      try {
+        var accounts = await provider.request({ method: 'eth_accounts' });
+
+        if (accounts && accounts[0] && !hasWallet()) {
+          activeProvider = provider;
+
+          saveWallet({
+            address: accounts[0],
+            connectedAt: new Date().toISOString(),
+            host: location.host,
+            walletName: providerName(provider)
+          });
+
+          updatePanel();
+          return;
+        }
+      } catch (_) {}
+    }
+  }
+
   function init() {
     buildPanel();
     updatePanel();
+
     document.addEventListener('click', guardEvent, true);
     document.addEventListener('mousedown', guardEvent, true);
     document.addEventListener('touchstart', guardEvent, true);
     document.addEventListener('submit', guardSubmit, true);
 
-    if (window.ethereum && window.ethereum.on) {
-      window.ethereum.on('accountsChanged', function (accounts) {
-        if (accounts && accounts[0]) saveWallet(Object.assign(getSaved() || {}, { address: accounts[0], connectedAt: new Date().toISOString(), host: location.host }));
-        else clearWallet();
-        updatePanel();
-      });
-      window.ethereum.on('chainChanged', function () { window.dispatchEvent(new Event('lom:chain-changed')); });
-      window.ethereum.request({ method: 'eth_accounts' }).then(function (accounts) {
-        if (accounts && accounts[0] && !hasWallet()) {
-          saveWallet({ address: accounts[0], connectedAt: new Date().toISOString(), host: location.host });
-          updatePanel();
-        }
-      }).catch(function () {});
-    }
+    bindAllProviders();
+    autoDetectConnectedWallet();
   }
 
   window.LoMWalletGate = {
@@ -278,12 +633,21 @@
     ensureMonadNetwork: ensureMonadNetwork,
     hasWallet: hasWallet,
     getWallet: getSaved,
+    getProvider: function () {
+      return activeProvider || getEthereumProvider();
+    },
+    getAllProviders: getAllProviders,
+    request: walletRequest,
+    signMessage: signMessage,
     getTokenAddress: getTokenAddress,
     disconnectLocal: clearWallet,
     showWarning: showWarning,
     shortAddr: shortAddr
   };
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
-  else init();
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
 })();
