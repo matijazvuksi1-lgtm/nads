@@ -6,13 +6,13 @@
 
   var cfg = Object.assign({
     tokenSymbol: '$LoN',
-    tokenAddress: '',
-    contractAddress: '',
+    tokenAddress: '0x53Bc12b090CfC365E7394d1cC745F8ac04117777',
+    contractAddress: '0x53Bc12b090CfC365E7394d1cC745F8ac04117777',
     tokenDecimals: 18,
     monadRpcUrl: 'https://rpc.monad.xyz',
     monadExplorerUrl: 'https://monadvision.com',
     nadFunUrl: 'https://nad.fun',
-    nadFunTokenUrl: '',
+    nadFunTokenUrl: 'https://nad.fun/tokens/0x53Bc12b090CfC365E7394d1cC745F8ac04117777',
     replaceOldCurrencyUi: true,
     showBalanceInInventory: true,
     refreshBalanceMs: 15000
