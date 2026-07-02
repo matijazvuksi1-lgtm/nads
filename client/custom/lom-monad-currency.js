@@ -16,11 +16,17 @@
     payoutApiUrl: '',
     replaceOldCurrencyUi: true,
     showBalanceInInventory: true,
-    refreshBalanceMs: 15000
+    refreshBalanceMs: 15000,
+    pointsPerToken: 100
   }, window.LOM_WEB3_CONFIG || {});
 
   var lastBalanceText = '--';
   var timer = null;
+
+  // Display only. Real payout is checked by backend from saved gold.
+  var sessionEarnedGold = 0;
+  var seenGoldMessages = {};
+  var goldObserverStarted = false;
 
   function isAddress(x) {
     return /^0x[a-fA-F0-9]{40}$/.test(String(x || ''));
@@ -188,6 +194,12 @@
       if (window.player && player.name) return player.name;
     } catch (_) {}
 
+    var fromStorage = localStorage.getItem('lom_player_name') ||
+      localStorage.getItem('playerName') ||
+      localStorage.getItem('playername');
+
+    if (fromStorage) return fromStorage;
+
     return getInputValue([
       '#playername',
       '#playerName',
@@ -268,6 +280,7 @@
       }
 
       localStorage.setItem('lom_username', username);
+      localStorage.setItem('lom_player_name', playerName);
 
       var timestamp = Date.now();
       var signature = await signPayout(wallet, username, playerName, timestamp);
@@ -295,6 +308,11 @@
       }
 
       setPayoutStatus('Payout sent: ' + data.paidTokens + ' ' + (cfg.tokenSymbol || '$LoN') + ' · TX ' + shortAddr(data.txHash));
+
+      // After real payout, reset display session earned.
+      sessionEarnedGold = 0;
+      updateEarnedGoldUi();
+
       refreshBalance(true);
     } catch (err) {
       var msg = err && err.message ? err.message : 'Payout error';
@@ -303,11 +321,102 @@
     }
   }
 
+  function formatClaimableFromGold(gold) {
+    var pointsPerToken = Number(cfg.pointsPerToken || 100);
+    if (!pointsPerToken || pointsPerToken <= 0) pointsPerToken = 100;
+
+    var tokens = gold / pointsPerToken;
+
+    if (tokens >= 1) {
+      return tokens.toFixed(2).replace(/\.?0+$/, '');
+    }
+
+    return tokens.toFixed(4).replace(/\.?0+$/, '');
+  }
+
+  function updateEarnedGoldUi() {
+    var sym = cfg.tokenSymbol || '$LoN';
+    var tokenEstimate = formatClaimableFromGold(sessionEarnedGold);
+
+    var text = 'Earned this session: ' + sessionEarnedGold + ' gold ≈ ' + tokenEstimate + ' ' + sym;
+
+    var el = document.getElementById('lom-earned-session');
+    if (!el) {
+      var frame = document.getElementById('lom-onchain-currency-frame');
+      if (!frame) return;
+
+      el = document.createElement('div');
+      el.id = 'lom-earned-session';
+      el.style.marginTop = '6px';
+      el.style.fontSize = '12px';
+      el.style.fontWeight = 'bold';
+      frame.appendChild(el);
+    }
+
+    el.textContent = text;
+  }
+
+  function scanGoldAddedText(text) {
+    if (!text) return;
+
+    var matches = String(text).match(/(\d+)\s+gold\s+added/gi);
+    if (!matches) return;
+
+    matches.forEach(function (m) {
+      var numMatch = m.match(/(\d+)/);
+      if (!numMatch) return;
+
+      var amount = parseInt(numMatch[1], 10);
+      if (!Number.isFinite(amount) || amount <= 0) return;
+
+      // avoid duplicate counting from same message spam in same second
+      var shortKey = m.toLowerCase() + ':' + Math.floor(Date.now() / 1000);
+      if (seenGoldMessages[shortKey]) return;
+      seenGoldMessages[shortKey] = true;
+
+      sessionEarnedGold += amount;
+      updateEarnedGoldUi();
+    });
+  }
+
+  function startGoldObserver() {
+    if (goldObserverStarted) return;
+    goldObserverStarted = true;
+
+    updateEarnedGoldUi();
+
+    var observer = new MutationObserver(function (mutations) {
+      mutations.forEach(function (mutation) {
+        mutation.addedNodes.forEach(function (node) {
+          if (!node) return;
+
+          if (node.nodeType === 3) {
+            scanGoldAddedText(node.textContent);
+            return;
+          }
+
+          if (node.textContent) {
+            scanGoldAddedText(node.textContent);
+          }
+        });
+      });
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true
+    });
+  }
+
   function ensureInventoryFrame() {
     if (!cfg.showBalanceInInventory) return null;
 
     var existing = document.getElementById('lom-onchain-currency-frame');
-    if (existing) return existing;
+    if (existing) {
+      updateEarnedGoldUi();
+      return existing;
+    }
 
     var frame = document.createElement('div');
     frame.id = 'lom-onchain-currency-frame';
@@ -325,8 +434,16 @@
 
     var sub = document.createElement('div');
     sub.id = 'lom-lon-sub';
-    sub.textContent = 'Ticker: ' + (cfg.tokenSymbol || '$LoN') + ' · Monad on-chain balance';
+    sub.textContent = 'Wallet balance · Monad on-chain';
     frame.appendChild(sub);
+
+    var earned = document.createElement('div');
+    earned.id = 'lom-earned-session';
+    earned.style.marginTop = '6px';
+    earned.style.fontSize = '12px';
+    earned.style.fontWeight = 'bold';
+    earned.textContent = 'Earned this session: 0 gold ≈ 0 ' + (cfg.tokenSymbol || '$LoN');
+    frame.appendChild(earned);
 
     var actions = document.createElement('div');
     actions.id = 'lom-onchain-currency-actions';
@@ -362,12 +479,14 @@
     status.id = 'lom-payout-status';
     status.style.marginTop = '6px';
     status.style.fontSize = '12px';
-    status.textContent = 'Payout: saved gold only';
+    status.textContent = 'Payout uses saved server gold';
     frame.appendChild(status);
 
     var inv = document.getElementById('allinventorywindow');
     if (inv) inv.insertBefore(frame, inv.firstChild);
     else document.body.appendChild(frame);
+
+    updateEarnedGoldUi();
 
     return frame;
   }
@@ -399,11 +518,11 @@
       return;
     }
 
-    updateBalanceText(sym + ': loading...', 'Wallet: ' + shortAddr(addr) + ' · Monad');
+    updateBalanceText(sym + ': loading...', 'Wallet: ' + shortAddr(addr) + ' · checking on-chain balance');
 
     try {
       var balance = await readLonBalance(addr);
-      updateBalanceText(sym + ': ' + balance, 'Wallet: ' + shortAddr(addr) + ' · on-chain balance');
+      updateBalanceText(sym + ': ' + balance, 'Wallet: ' + shortAddr(addr) + ' · wallet balance on-chain');
 
       window.dispatchEvent(new CustomEvent('lom:lon-balance', {
         detail: {
@@ -457,6 +576,7 @@
     patchInventorySetCurrency();
     patchKnownGoldTexts();
     refreshBalance(false);
+    startGoldObserver();
 
     if (timer) clearInterval(timer);
 
@@ -465,6 +585,7 @@
       ensureInventoryFrame();
       patchInventorySetCurrency();
       refreshBalance(false);
+      updateEarnedGoldUi();
     }, Number(cfg.refreshBalanceMs || 15000));
   }
 
@@ -474,6 +595,13 @@
     hideOldCurrency: hideOldCurrency,
     ensureInventoryFrame: ensureInventoryFrame,
     requestPayout: requestPayout,
+    getSessionEarnedGold: function () {
+      return sessionEarnedGold;
+    },
+    resetSessionEarnedGold: function () {
+      sessionEarnedGold = 0;
+      updateEarnedGoldUi();
+    },
     getLastBalanceText: function () {
       return lastBalanceText;
     }
