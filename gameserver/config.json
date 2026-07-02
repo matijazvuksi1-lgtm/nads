@@ -2,7 +2,7 @@
   "protocol": "http",
   "address": "135.181.154.254",
   "port": 1342,
-  "user_address": "127.0.0.1",
+  "user_address": "135.181.154.254",
   "user_port": 1340,
   "user_password": "thisisatest",
   "https_cert": "",
