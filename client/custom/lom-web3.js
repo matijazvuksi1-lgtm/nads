@@ -75,7 +75,7 @@
   }
 
   function waitForProviders(timeoutMs) {
-    timeoutMs = timeoutMs || 4000;
+    timeoutMs = timeoutMs || 5000;
 
     return new Promise(function (resolve) {
       var started = Date.now();
@@ -116,29 +116,47 @@
     preferWallet = String(preferWallet || '').toLowerCase();
 
     if (preferWallet === 'phantom') {
-      var phantom = providers.find(function (p) { return p && p.isPhantom; });
+      var phantom = providers.find(function (p) {
+        return p && p.isPhantom;
+      });
+
       if (phantom) return phantom;
     }
 
     if (preferWallet === 'metamask') {
-      var metamask = providers.find(function (p) { return p && p.isMetaMask; });
+      var metamask = providers.find(function (p) {
+        return p && p.isMetaMask;
+      });
+
       if (metamask) return metamask;
     }
 
     if (preferWallet === 'rabby') {
-      var rabby = providers.find(function (p) { return p && p.isRabby; });
+      var rabby = providers.find(function (p) {
+        return p && p.isRabby;
+      });
+
       if (rabby) return rabby;
     }
 
     if (preferWallet === 'okx') {
-      var okx = providers.find(function (p) { return p && (p.isOkxWallet || p.isOKExWallet); });
+      var okx = providers.find(function (p) {
+        return p && (p.isOkxWallet || p.isOKExWallet);
+      });
+
       if (okx) return okx;
     }
 
-    var phantomFirst = providers.find(function (p) { return p && p.isPhantom; });
+    var phantomFirst = providers.find(function (p) {
+      return p && p.isPhantom;
+    });
+
     if (phantomFirst) return phantomFirst;
 
-    var metaFirst = providers.find(function (p) { return p && p.isMetaMask; });
+    var metaFirst = providers.find(function (p) {
+      return p && p.isMetaMask;
+    });
+
     if (metaFirst) return metaFirst;
 
     return providers[0];
@@ -157,14 +175,18 @@
 
   function hasWallet() {
     var saved = getSaved();
-    return !!(saved && isEvmAddress(saved.address));
+    return !!(saved && isEvmAddress(saved.address) && saved.realConnected === true);
   }
 
   function statusText() {
     var saved = getSaved();
 
-    if (saved && saved.address) {
+    if (saved && saved.address && saved.realConnected === true) {
       return '✅ ' + shortAddr(saved.address);
+    }
+
+    if (saved && saved.address && saved.realConnected !== true) {
+      return 'Connect Wallet';
     }
 
     return 'Wallet required';
@@ -180,7 +202,9 @@
     document.body.appendChild(el);
 
     setTimeout(function () {
-      if (el && el.parentNode) el.parentNode.removeChild(el);
+      if (el && el.parentNode) {
+        el.parentNode.removeChild(el);
+      }
     }, 4500);
   }
 
@@ -322,6 +346,10 @@
   }
 
   async function connectWallet(preferWallet) {
+    // delete old saved fake wallet first; it will be saved again only after real wallet responds
+    localStorage.removeItem(STORAGE_KEY);
+    updatePanel();
+
     var providers = await waitForProviders(5000);
 
     if (!providers.length) {
@@ -369,7 +397,8 @@
         connectedAt: new Date().toISOString(),
         host: location.host,
         chainId: cfg.monadChainIdHex || '0x8f',
-        walletName: providerName(provider)
+        walletName: providerName(provider),
+        realConnected: true
       };
 
       if (cfg.askSignatureAfterConnect) {
@@ -475,10 +504,12 @@
     walletBtn.id = 'lom-connect-wallet-btn';
     walletBtn.type = 'button';
     walletBtn.textContent = hasWallet() ? 'Change wallet' : 'Connect Wallet';
+
     walletBtn.onclick = function (e) {
       e.preventDefault();
       connectWallet();
     };
+
     panel.appendChild(walletBtn);
 
     var status = document.createElement('span');
@@ -536,7 +567,9 @@
         e.preventDefault();
         e.stopPropagation();
 
-        if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+        if (e.stopImmediatePropagation) {
+          e.stopImmediatePropagation();
+        }
 
         showWarning('Connect wallet first, then continue.');
         connectWallet();
@@ -574,7 +607,8 @@
           address: accounts[0],
           connectedAt: new Date().toISOString(),
           host: location.host,
-          walletName: providerName(provider)
+          walletName: providerName(provider),
+          realConnected: true
         }));
       } else {
         clearWallet();
@@ -594,6 +628,7 @@
   }
 
   async function autoDetectConnectedWallet() {
+    // only auto-detect real connected accounts from provider; old localStorage alone is ignored
     var providers = await waitForProviders(5000);
 
     for (var i = 0; i < providers.length; i++) {
@@ -609,7 +644,8 @@
             address: accounts[0],
             connectedAt: new Date().toISOString(),
             host: location.host,
-            walletName: providerName(provider)
+            walletName: providerName(provider),
+            realConnected: true
           });
 
           updatePanel();
@@ -622,6 +658,12 @@
   }
 
   function init() {
+    // clear old cached wallet from older versions without realConnected flag
+    var saved = getSaved();
+    if (saved && saved.address && saved.realConnected !== true) {
+      localStorage.removeItem(STORAGE_KEY);
+    }
+
     buildPanel();
     updatePanel();
 
@@ -639,10 +681,13 @@
     ensureMonadNetwork: ensureMonadNetwork,
     hasWallet: hasWallet,
     getWallet: getSaved,
+
     getProvider: function () {
       return activeProvider || getEthereumProvider();
     },
+
     getAllProviders: getAllProviders,
+
     request: async function (method, params) {
       var provider = activeProvider || getEthereumProvider();
 
@@ -662,6 +707,7 @@
         params: params || []
       });
     },
+
     signMessage: signMessage,
     getTokenAddress: getTokenAddress,
     disconnectLocal: clearWallet,
