@@ -1,7 +1,7 @@
 {
     "host": "www.landofnads.xyz",
     "port": 1340,
-    "protocol": "http",
+    "protocol": "https",
     "useLocalAPI": false,
     "dispatcher": false,
     "version":97,
