@@ -20,10 +20,7 @@
     pointsPerToken: 100
   }, window.LOM_WEB3_CONFIG || {});
 
-  var lastBalanceText = '--';
   var timer = null;
-
-  // Display only. Real payout is checked by backend from saved gold.
   var sessionEarnedGold = 0;
   var seenGoldMessages = {};
   var goldObserverStarted = false;
@@ -41,14 +38,6 @@
     return w && w.address ? w.address : '';
   }
 
-  function strip0x(x) {
-    return String(x || '').replace(/^0x/i, '');
-  }
-
-  function pad64(x) {
-    return strip0x(x).toLowerCase().padStart(64, '0');
-  }
-
   function shortAddr(addr) {
     if (window.LoMWalletGate && window.LoMWalletGate.shortAddr) return window.LoMWalletGate.shortAddr(addr);
     return addr ? addr.slice(0, 6) + '...' + addr.slice(-4) : '';
@@ -59,39 +48,28 @@
     if (el) el.textContent = text;
   }
 
+  function pad64(x) {
+    return String(x || '').replace(/^0x/i, '').toLowerCase().padStart(64, '0');
+  }
+
   function formatUnits(hexValue, decimals) {
-    decimals = Number.isFinite(Number(decimals)) ? Number(decimals) : 18;
-
+    decimals = Number(decimals || 18);
     var raw;
-    try {
-      raw = BigInt(hexValue || '0x0');
-    } catch (_) {
-      raw = 0n;
-    }
-
+    try { raw = BigInt(hexValue || '0x0'); } catch (_) { raw = 0n; }
     var base = 10n ** BigInt(decimals);
     var whole = raw / base;
     var frac = raw % base;
     var fracStr = frac.toString().padStart(decimals, '0').replace(/0+$/, '').slice(0, 4);
     var wholeStr = whole.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-
-    return fracStr ? (wholeStr + '.' + fracStr) : wholeStr;
+    return fracStr ? wholeStr + '.' + fracStr : wholeStr;
   }
 
   async function rpcCall(method, params) {
-    var body = {
-      jsonrpc: '2.0',
-      id: Date.now(),
-      method: method,
-      params: params || []
-    };
-
     var res = await fetch(cfg.monadRpcUrl || 'https://rpc.monad.xyz', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body)
+      body: JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method: method, params: params || [] })
     });
-
     var json = await res.json();
     if (json.error) throw new Error(json.error.message || 'RPC error');
     return json.result;
@@ -99,36 +77,22 @@
 
   async function readLonBalance(addr) {
     var ca = tokenAddress();
-
     if (!isAddress(addr)) throw new Error('Wallet not connected');
     if (!isAddress(ca)) throw new Error('CA missing');
-
     var data = '0x70a08231' + pad64(addr);
     var result = await rpcCall('eth_call', [{ to: ca, data: data }, 'latest']);
-
     return formatUnits(result, cfg.tokenDecimals || 18);
   }
 
   function hideOldCurrency() {
     if (!cfg.replaceOldCurrencyUi) return;
-
     document.body.classList.add('lom-onchain-currency');
-
     try {
-      var selectors = [
-        '.inventoryGoldFrame',
-        '.inventoryGemsFrame',
-        '.inventorySellGoldFrame'
-      ];
-
-      selectors.forEach(function (sel) {
+      ['.inventoryGoldFrame', '.inventoryGemsFrame', '.inventorySellGoldFrame'].forEach(function (sel) {
         Array.prototype.forEach.call(document.querySelectorAll(sel), function (el) {
-          if (!el.closest || !el.closest('#lom-onchain-currency-frame')) {
-            el.style.display = 'none';
-          }
+          if (!el.closest || !el.closest('#lom-onchain-currency-frame')) el.style.display = 'none';
         });
       });
-
       Array.prototype.forEach.call(document.querySelectorAll('.inventoryGold, .inventoryGems, .inventorySellGold'), function (el) {
         el.textContent = '';
       });
@@ -138,26 +102,23 @@
   function makeAnchor(label, href, disabled) {
     var a = document.createElement('a');
     a.textContent = label;
-
     if (disabled) {
       a.href = '#';
       a.className = 'is-disabled';
       a.onclick = function (e) {
         e.preventDefault();
-        if (window.LoMWalletGate) window.LoMWalletGate.showWarning('CA/token page will be added after launch.');
+        if (window.LoMWalletGate) window.LoMWalletGate.showWarning('CA/token page missing.');
       };
     } else {
       a.href = href;
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
     }
-
     return a;
   }
 
   function getPayoutApiUrl() {
     if (cfg.payoutApiUrl) return String(cfg.payoutApiUrl).replace(/\/$/, '');
-
     var proto = window.location.protocol === 'https:' ? 'https://' : 'http://';
     return proto + window.location.hostname + ':1355';
   }
@@ -168,24 +129,13 @@
       if (el && el.value) return String(el.value).trim();
       if (el && el.textContent) return String(el.textContent).trim();
     }
-
     return '';
   }
 
   function guessUsername() {
-    var fromStorage = localStorage.getItem('lom_username') ||
-      localStorage.getItem('username') ||
-      localStorage.getItem('name');
-
+    var fromStorage = localStorage.getItem('lom_username') || localStorage.getItem('username') || localStorage.getItem('name');
     if (fromStorage) return fromStorage;
-
-    return getInputValue([
-      '#loginname',
-      '#username',
-      'input[name="username"]',
-      'input[name="name"]',
-      '.username'
-    ]);
+    return getInputValue(['#loginname', '#username', 'input[name="username"]', 'input[name="name"]', '.username']);
   }
 
   function guessPlayerName() {
@@ -193,21 +143,9 @@
       if (window.game && game.player && game.player.name) return game.player.name;
       if (window.player && player.name) return player.name;
     } catch (_) {}
-
-    var fromStorage = localStorage.getItem('lom_player_name') ||
-      localStorage.getItem('playerName') ||
-      localStorage.getItem('playername');
-
+    var fromStorage = localStorage.getItem('lom_player_name') || localStorage.getItem('playerName') || localStorage.getItem('playername');
     if (fromStorage) return fromStorage;
-
-    return getInputValue([
-      '#playername',
-      '#playerName',
-      'input[name="playername"]',
-      'input[name="playerName"]',
-      '.playername',
-      '.playerName'
-    ]);
+    return getInputValue(['#playername', '#playerName', 'input[name="playername"]', 'input[name="playerName"]', '.playername', '.playerName']);
   }
 
   function buildPayoutMessage(wallet, username, playerName, timestamp) {
@@ -222,33 +160,20 @@
 
   async function ensureWalletConnected() {
     var addr = walletAddress();
-
     if (isAddress(addr)) return addr;
-
     if (window.LoMWalletGate && window.LoMWalletGate.connect) {
       var w = await window.LoMWalletGate.connect();
       if (w && w.address) return w.address;
     }
-
-    if (window.ethereum && window.ethereum.request) {
-      var accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-      if (accounts && accounts[0]) return accounts[0];
-    }
-
     throw new Error('Connect wallet first');
   }
 
   async function signPayout(wallet, username, playerName, timestamp) {
-    if (!window.ethereum || !window.ethereum.request) {
-      throw new Error('Wallet not found');
-    }
-
     var message = buildPayoutMessage(wallet, username, playerName, timestamp);
-
-    return await window.ethereum.request({
-      method: 'personal_sign',
-      params: [message, wallet]
-    });
+    if (window.LoMWalletGate && window.LoMWalletGate.signMessage) {
+      return await window.LoMWalletGate.signMessage(message, wallet);
+    }
+    throw new Error('Wallet not connected');
   }
 
   function setPayoutStatus(text) {
@@ -257,19 +182,13 @@
 
   async function requestPayout() {
     try {
-      setPayoutStatus('Preparing payout...');
-
+      setPayoutStatus('Connecting wallet...');
       var wallet = await ensureWalletConnected();
       var username = guessUsername();
       var playerName = guessPlayerName();
 
-      if (!username) {
-        username = prompt('Enter your game username');
-      }
-
-      if (!playerName) {
-        playerName = prompt('Enter your player name');
-      }
+      if (!username) username = prompt('Enter your game username');
+      if (!playerName) playerName = prompt('Enter your player name');
 
       username = String(username || '').trim().toLowerCase();
       playerName = String(playerName || '').trim();
@@ -283,24 +202,17 @@
       localStorage.setItem('lom_player_name', playerName);
 
       var timestamp = Date.now();
+      setPayoutStatus('Sign payout message...');
       var signature = await signPayout(wallet, username, playerName, timestamp);
 
       setPayoutStatus('Sending payout request...');
-
       var res = await fetch(getPayoutApiUrl() + '/payout', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          wallet: wallet,
-          username: username,
-          playerName: playerName,
-          timestamp: timestamp,
-          signature: signature
-        })
+        body: JSON.stringify({ wallet: wallet, username: username, playerName: playerName, timestamp: timestamp, signature: signature })
       });
 
       var data = await res.json();
-
       if (!data.ok) {
         setPayoutStatus('Payout failed: ' + (data.error || 'Unknown error'));
         if (window.LoMWalletGate) window.LoMWalletGate.showWarning(data.error || 'Payout failed');
@@ -308,11 +220,8 @@
       }
 
       setPayoutStatus('Payout sent: ' + data.paidTokens + ' ' + (cfg.tokenSymbol || '$LoN') + ' · TX ' + shortAddr(data.txHash));
-
-      // After real payout, reset display session earned.
       sessionEarnedGold = 0;
       updateEarnedGoldUi();
-
       refreshBalance(true);
     } catch (err) {
       var msg = err && err.message ? err.message : 'Payout error';
@@ -324,56 +233,30 @@
   function formatClaimableFromGold(gold) {
     var pointsPerToken = Number(cfg.pointsPerToken || 100);
     if (!pointsPerToken || pointsPerToken <= 0) pointsPerToken = 100;
-
     var tokens = gold / pointsPerToken;
-
-    if (tokens >= 1) {
-      return tokens.toFixed(2).replace(/\.?0+$/, '');
-    }
-
-    return tokens.toFixed(4).replace(/\.?0+$/, '');
+    return (tokens >= 1 ? tokens.toFixed(2) : tokens.toFixed(4)).replace(/\.?0+$/, '');
   }
 
   function updateEarnedGoldUi() {
     var sym = cfg.tokenSymbol || '$LoN';
-    var tokenEstimate = formatClaimableFromGold(sessionEarnedGold);
-
-    var text = 'Earned this session: ' + sessionEarnedGold + ' gold ≈ ' + tokenEstimate + ' ' + sym;
-
+    var text = 'Earned this session: ' + sessionEarnedGold + ' gold ≈ ' + formatClaimableFromGold(sessionEarnedGold) + ' ' + sym;
     var el = document.getElementById('lom-earned-session');
-    if (!el) {
-      var frame = document.getElementById('lom-onchain-currency-frame');
-      if (!frame) return;
-
-      el = document.createElement('div');
-      el.id = 'lom-earned-session';
-      el.style.marginTop = '6px';
-      el.style.fontSize = '12px';
-      el.style.fontWeight = 'bold';
-      frame.appendChild(el);
-    }
-
+    if (!el) return;
     el.textContent = text;
   }
 
   function scanGoldAddedText(text) {
     if (!text) return;
-
     var matches = String(text).match(/(\d+)\s+gold\s+added/gi);
     if (!matches) return;
-
     matches.forEach(function (m) {
       var numMatch = m.match(/(\d+)/);
       if (!numMatch) return;
-
       var amount = parseInt(numMatch[1], 10);
       if (!Number.isFinite(amount) || amount <= 0) return;
-
-      // avoid duplicate counting from same message spam in same second
       var shortKey = m.toLowerCase() + ':' + Math.floor(Date.now() / 1000);
       if (seenGoldMessages[shortKey]) return;
       seenGoldMessages[shortKey] = true;
-
       sessionEarnedGold += amount;
       updateEarnedGoldUi();
     });
@@ -382,36 +265,21 @@
   function startGoldObserver() {
     if (goldObserverStarted) return;
     goldObserverStarted = true;
-
     updateEarnedGoldUi();
-
     var observer = new MutationObserver(function (mutations) {
       mutations.forEach(function (mutation) {
         mutation.addedNodes.forEach(function (node) {
           if (!node) return;
-
-          if (node.nodeType === 3) {
-            scanGoldAddedText(node.textContent);
-            return;
-          }
-
-          if (node.textContent) {
-            scanGoldAddedText(node.textContent);
-          }
+          if (node.nodeType === 3) scanGoldAddedText(node.textContent);
+          else if (node.textContent) scanGoldAddedText(node.textContent);
         });
       });
     });
-
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-      characterData: true
-    });
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
   }
 
   function ensureInventoryFrame() {
     if (!cfg.showBalanceInInventory) return null;
-
     var existing = document.getElementById('lom-onchain-currency-frame');
     if (existing) {
       updateEarnedGoldUi();
@@ -442,7 +310,6 @@
     earned.style.marginTop = '6px';
     earned.style.fontSize = '12px';
     earned.style.fontWeight = 'bold';
-    earned.textContent = 'Earned this session: 0 gold ≈ 0 ' + (cfg.tokenSymbol || '$LoN');
     frame.appendChild(earned);
 
     var actions = document.createElement('div');
@@ -451,35 +318,26 @@
     var refresh = document.createElement('button');
     refresh.type = 'button';
     refresh.textContent = 'Refresh';
-    refresh.onclick = function (e) {
-      e.preventDefault();
-      refreshBalance(true);
-    };
+    refresh.onclick = function (e) { e.preventDefault(); refreshBalance(true); };
     actions.appendChild(refresh);
 
     var payout = document.createElement('button');
     payout.type = 'button';
     payout.textContent = 'PAYOUT';
-    payout.onclick = function (e) {
-      e.preventDefault();
-      requestPayout();
-    };
+    payout.onclick = function (e) { e.preventDefault(); requestPayout(); };
     actions.appendChild(payout);
 
     var ca = tokenAddress();
     var explorerHref = ca ? ((cfg.monadExplorerUrl || 'https://monadvision.com') + '/address/' + ca) : '#';
     actions.appendChild(makeAnchor(ca ? 'View CA' : 'CA soon', explorerHref, !ca));
-
-    var nadUrl = cfg.nadFunTokenUrl || cfg.nadFunUrl || 'https://nad.fun';
-    actions.appendChild(makeAnchor('nad.fun', nadUrl, false));
-
+    actions.appendChild(makeAnchor('nad.fun', cfg.nadFunTokenUrl || cfg.nadFunUrl || 'https://nad.fun', false));
     frame.appendChild(actions);
 
     var status = document.createElement('div');
     status.id = 'lom-payout-status';
     status.style.marginTop = '6px';
     status.style.fontSize = '12px';
-    status.textContent = 'Payout uses saved server gold';
+    status.textContent = 'Connect wallet for payout';
     frame.appendChild(status);
 
     var inv = document.getElementById('allinventorywindow');
@@ -487,16 +345,12 @@
     else document.body.appendChild(frame);
 
     updateEarnedGoldUi();
-
     return frame;
   }
 
   function updateBalanceText(text, subText) {
-    lastBalanceText = text;
-
     setText('lom-lon-balance', text);
-    setText('lom-lon-top-balance', text.replace((cfg.tokenSymbol || '$LoN') + ': ', (cfg.tokenSymbol || '$LoN') + ': '));
-
+    setText('lom-lon-top-balance', text);
     if (subText) setText('lom-lon-sub', subText);
   }
 
@@ -510,63 +364,38 @@
 
     if (!isAddress(addr)) {
       updateBalanceText(sym + ': connect wallet', 'Connect wallet first.');
+      setPayoutStatus('Wallet not connected');
       return;
     }
 
     if (!isAddress(ca)) {
-      updateBalanceText(sym + ': CA soon', 'Wallet: ' + shortAddr(addr) + ' · paste token CA after nad.fun launch.');
+      updateBalanceText(sym + ': CA soon', 'Wallet: ' + shortAddr(addr) + ' · paste token CA.');
       return;
     }
 
-    updateBalanceText(sym + ': loading...', 'Wallet: ' + shortAddr(addr) + ' · checking on-chain balance');
+    updateBalanceText(sym + ': loading...', 'Wallet: ' + shortAddr(addr) + ' · checking balance');
 
     try {
       var balance = await readLonBalance(addr);
       updateBalanceText(sym + ': ' + balance, 'Wallet: ' + shortAddr(addr) + ' · wallet balance on-chain');
-
-      window.dispatchEvent(new CustomEvent('lom:lon-balance', {
-        detail: {
-          address: addr,
-          token: ca,
-          balance: balance,
-          symbol: sym
-        }
-      }));
+      setPayoutStatus('Ready. Payout uses saved server gold.');
+      window.dispatchEvent(new CustomEvent('lom:lon-balance', { detail: { address: addr, token: ca, balance: balance, symbol: sym } }));
     } catch (err) {
-      updateBalanceText(sym + ': error', (err && err.message ? err.message : 'Could not read token balance'));
-
-      if (userClicked && window.LoMWalletGate) {
-        window.LoMWalletGate.showWarning('Could not read ' + sym + ' balance. Check CA/RPC.');
-      }
+      updateBalanceText(sym + ': error', err && err.message ? err.message : 'Could not read token balance');
+      if (userClicked && window.LoMWalletGate) window.LoMWalletGate.showWarning('Could not read ' + sym + ' balance.');
     }
   }
 
   function patchInventorySetCurrency() {
     try {
       if (!window.game || !game.inventory || !game.inventory.setCurrency || game.inventory._lomOnChainPatched) return;
-
       game.inventory._lomOldSetCurrency = game.inventory.setCurrency;
       game.inventory.setCurrency = function () {
         hideOldCurrency();
         ensureInventoryFrame();
         refreshBalance(false);
       };
-
       game.inventory._lomOnChainPatched = true;
-    } catch (_) {}
-  }
-
-  function patchKnownGoldTexts() {
-    try {
-      Array.prototype.forEach.call(document.querySelectorAll('body *'), function (el) {
-        if (!el || el.children.length > 0) return;
-
-        var t = (el.textContent || '').trim();
-
-        if (t === 'GEMS' || t === 'Gems' || t === 'Gold' || t === 'GOLD') {
-          el.textContent = cfg.tokenSymbol || '$LoN';
-        }
-      });
     } catch (_) {}
   }
 
@@ -574,12 +403,10 @@
     hideOldCurrency();
     ensureInventoryFrame();
     patchInventorySetCurrency();
-    patchKnownGoldTexts();
     refreshBalance(false);
     startGoldObserver();
 
     if (timer) clearInterval(timer);
-
     timer = setInterval(function () {
       hideOldCurrency();
       ensureInventoryFrame();
@@ -592,40 +419,16 @@
   window.LoMMonadCurrency = {
     refresh: refreshBalance,
     readBalance: readLonBalance,
-    hideOldCurrency: hideOldCurrency,
-    ensureInventoryFrame: ensureInventoryFrame,
     requestPayout: requestPayout,
-    getSessionEarnedGold: function () {
-      return sessionEarnedGold;
-    },
-    resetSessionEarnedGold: function () {
-      sessionEarnedGold = 0;
-      updateEarnedGoldUi();
-    },
-    getLastBalanceText: function () {
-      return lastBalanceText;
-    }
+    getSessionEarnedGold: function () { return sessionEarnedGold; },
+    resetSessionEarnedGold: function () { sessionEarnedGold = 0; updateEarnedGoldUi(); }
   };
 
-  window.addEventListener('lom:wallet-connected', function () {
-    refreshBalance(false);
-  });
+  window.addEventListener('lom:wallet-connected', function () { refreshBalance(false); });
+  window.addEventListener('lom:wallet-disconnected', function () { refreshBalance(false); });
+  window.addEventListener('lom:chain-changed', function () { refreshBalance(false); });
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) refreshBalance(false); });
 
-  window.addEventListener('lom:wallet-disconnected', function () {
-    refreshBalance(false);
-  });
-
-  window.addEventListener('lom:chain-changed', function () {
-    refreshBalance(false);
-  });
-
-  document.addEventListener('visibilitychange', function () {
-    if (!document.hidden) refreshBalance(false);
-  });
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
 })();
