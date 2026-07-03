@@ -158,8 +158,11 @@ module.exports = UserHandler = cls.Class.extend({
         console.info("player hash: "+player.hash);
         hashes[player.hash] = player;
         this.player = null;
-        this.send([Types.UserMessages.WU_PLAYER_LOADED,
-          MainConfig.protocol,MainConfig.address,MainConfig.port]);
+        this.send([
+          Types.UserMessages.WU_PLAYER_LOADED,
+          MainConfig.public_protocol || MainConfig.protocol,
+          MainConfig.public_address || MainConfig.address,
+          MainConfig.public_port || MainConfig.port]);
     },
 
     handleLoadUserInfo: function (playerName, msg) {
