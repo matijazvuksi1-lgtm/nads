@@ -1,7 +1,9 @@
 {
   "protocol": "http",
-  "address": "135.181.154.254",
+  "address": "landofnads.xyz",
   "port": 1342,
+  "https_cert": "/root/cert.pem",
+  "https_key": "/root/key.pem",
   "user_address": "127.0.0.1",
   "user_port": 1340,
   "user_password": "thisisatest",
