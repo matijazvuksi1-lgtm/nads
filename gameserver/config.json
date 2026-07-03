@@ -9,7 +9,7 @@
   "user_password": "thisisatest",
   "https_cert": "",
   "https_key": "",
-  "ip": "0.0.0.0",
+  "ip": "127.0.0.1",
   "debug_level": "debug",
   "nb_players_per_world": 100,
   "nb_worlds": 1,
