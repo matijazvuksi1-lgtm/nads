@@ -26,5 +26,8 @@
   "verify_email": "",
   "verify_key": "",
   "world_name": "North America",
-  "world_key": "test123"
+  "world_key": "test123",
+  "public_protocol": "https",
+  "public_address": "landofnads.xyz",
+  "public_port": 1342
 }
