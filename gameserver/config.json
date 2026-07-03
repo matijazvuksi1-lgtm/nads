@@ -1,7 +1,7 @@
 {
   "protocol": "http",
   "address": "127.0.0.1",
-  "port": 1342,
+  "port": 1343,
   "https_cert": "/root/cert.pem",
   "https_key": "/root/key.pem",
   "user_address": "127.0.0.1",
