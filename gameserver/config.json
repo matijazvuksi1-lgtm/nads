@@ -1,6 +1,6 @@
 {
   "protocol": "https",
-  "address": "135.181.154.254",
+  "address": "landofnads.xyz",
   "port": 1342,
   "https_cert": "/root/cert.pem",
   "https_key": "/root/key.pem",
