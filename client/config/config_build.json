@@ -1,6 +1,6 @@
 {
     "host": "landofnads.xyz",
-    "port": 1340,
+    "port": 443,
     "protocol": "https",
     "useLocalAPI": false,
     "dispatcher": false,
